@@ -18,6 +18,7 @@ import 'package:kernel/transformations/empty.dart' as empty;
 import 'package:kernel/transformations/method_call.dart' as method_call;
 import 'package:kernel/transformations/mixin_full_resolution.dart' as mix;
 import 'package:kernel/transformations/treeshaker.dart' as treeshaker;
+import 'package:kernel/transformations/protoshaker.dart' as protoshaker;
 // import 'package:kernel/verifier.dart';
 import 'package:kernel/transformations/coq.dart' as coq;
 import 'package:kernel/vm/constants_native_effects.dart';
@@ -107,6 +108,10 @@ Future<CompilerOutcome> runTransformation(List<String> arguments) async {
       component = treeshaker.transformComponent(coreTypes, hierarchy, component,
           programRoots: programRoots);
       break;
+    case 'protoshake':
+//      component = protoshaker.transformComponent(coreTypes, hierarchy, component,
+//          programRoots: programRoots);
+//      break;
     case 'methodcall':
       component =
           method_call.transformComponent(coreTypes, hierarchy, component);

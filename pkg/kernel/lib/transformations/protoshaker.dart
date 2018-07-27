@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-library kernel.tree_shaker;
+library kernel.proto_shaker;
 
 import '../ast.dart';
 import '../class_hierarchy.dart';
@@ -13,8 +13,8 @@ import '../library_index.dart';
 Component transformComponent(
     CoreTypes coreTypes, ClassHierarchy hierarchy, Component component,
     {List<ProgramRoot> programRoots, bool strongMode: false}) {
-  new TreeShaker(coreTypes, hierarchy, component,
-          programRoots: programRoots, strongMode: strongMode)
+  new ProtoShaker(coreTypes, hierarchy, component,
+      programRoots: programRoots, strongMode: strongMode)
       .transform(component);
   return component;
 }
@@ -91,7 +91,7 @@ class ProgramRoot {
 /// If the `dart:mirrors` library is used then nothing will be tree-shaken.
 //
 // TODO(asgerf): Tree shake unused instance fields.
-class TreeShaker {
+class ProtoShaker {
   final CoreTypes coreTypes;
   final ClosedWorldClassHierarchy hierarchy;
   final ClassHierarchySubtypes hierarchySubtypes;
@@ -119,7 +119,7 @@ class TreeShaker {
   /// The map is indexed by the name of the member, and value is a list of
   /// interleaved (host class, member) pairs.
   final Map<Name, List<TreeNode>> _dispatchTargetCandidates =
-      <Name, List<TreeNode>>{};
+  <Name, List<TreeNode>>{};
 
   /// Map from classes to the set of members that are reachable with that
   /// class as host.
@@ -162,7 +162,7 @@ class TreeShaker {
   final List<Expression> _typedCalls = <Expression>[];
 
   /// AST visitor for finding static uses and dynamic dispatches in code.
-  _TreeShakerVisitor _visitor;
+  _ProtoShakerVisitor _visitor;
 
   /// AST visitor for analyzing type annotations on external members.
   _ExternalTypeVisitor _covariantVisitor;
@@ -178,10 +178,10 @@ class TreeShaker {
   /// the mirrors library.
   bool get forceShaking => programRoots != null && programRoots.isNotEmpty;
 
-  TreeShaker(CoreTypes coreTypes, ClassHierarchy hierarchy, Component component,
+  ProtoShaker(CoreTypes coreTypes, ClassHierarchy hierarchy, Component component,
       {bool strongMode: false, List<ProgramRoot> programRoots})
       : this._internal(
-            coreTypes, hierarchy, component, strongMode, programRoots);
+      coreTypes, hierarchy, component, strongMode, programRoots);
 
   bool isMemberBodyUsed(Member member) {
     return _usedMembers.containsKey(member);
@@ -228,20 +228,20 @@ class TreeShaker {
     new _TreeShakingTransformer(this).transform(component);
   }
 
-  TreeShaker._internal(this.coreTypes, this.hierarchy, this.component,
+  ProtoShaker._internal(this.coreTypes, this.hierarchy, this.component,
       this.strongMode, this.programRoots)
       : this._dispatchedNames = new List<Set<Name>>(hierarchy.numberOfClasses),
         this._usedMembersWithHost =
-            new List<Set<Member>>(hierarchy.numberOfClasses),
+        new List<Set<Member>>(hierarchy.numberOfClasses),
         this._classRetention = new List<ClassRetention>.filled(
             hierarchy.numberOfClasses, ClassRetention.None),
         this.hierarchySubtypes = hierarchy.computeSubtypesInformation(),
         this.numberedClasses = createMapNumberIndex(hierarchy.classes),
         this.classes = new List<Class>.from(hierarchy.classes) {
-    _visitor = new _TreeShakerVisitor(this);
+    _visitor = new _ProtoShakerVisitor(this);
     _covariantVisitor = new _ExternalTypeVisitor(this, isCovariant: true);
     _contravariantVisitor =
-        new _ExternalTypeVisitor(this, isContravariant: true);
+    new _ExternalTypeVisitor(this, isContravariant: true);
     _invariantVisitor = new _ExternalTypeVisitor(this,
         isCovariant: true, isContravariant: true);
     _mirrorsLibrary = coreTypes.mirrorsLibrary;
@@ -274,7 +274,7 @@ class TreeShaker {
     _addUsedMember(null, component.mainMethod);
     if (programRoots != null) {
       var table =
-          new LibraryIndex(component, programRoots.map((r) => r.library));
+      new LibraryIndex(component, programRoots.map((r) => r.library));
       for (var root in programRoots) {
         _addUsedRoot(root, table);
       }
@@ -289,14 +289,14 @@ class TreeShaker {
         Class class_ = classes[i];
         if (isHierarchyUsed(class_)) {
           hierarchy.forEachOverridePair(class_,
-              (Member ownMember, Member superMember, bool isSetter) {
-            if (isMemberBodyUsed(ownMember) ||
-                _overriddenMembers.contains(ownMember)) {
-              _overriddenMembers.add(superMember);
-              // Ensure the types mentioned in the member can be preserved.
-              _visitor.visitMemberInterface(superMember);
-            }
-          });
+                  (Member ownMember, Member superMember, bool isSetter) {
+                if (isMemberBodyUsed(ownMember) ||
+                    _overriddenMembers.contains(ownMember)) {
+                  _overriddenMembers.add(superMember);
+                  // Ensure the types mentioned in the member can be preserved.
+                  _visitor.visitMemberInterface(superMember);
+                }
+              });
         }
       }
       // Marking members as overridden should not cause new code to become
@@ -405,7 +405,7 @@ class TreeShaker {
       _addDispatchTarget(classNode, member);
     }
     for (Member member
-        in hierarchy.getInterfaceMembers(classNode, setters: true)) {
+    in hierarchy.getInterfaceMembers(classNode, setters: true)) {
       _addDispatchTarget(classNode, member);
     }
   }
@@ -425,7 +425,7 @@ class TreeShaker {
       _addDispatchTarget(classNode, member);
     }
     for (Member member
-        in hierarchy.getDispatchTargets(classNode, setters: true)) {
+    in hierarchy.getDispatchTargets(classNode, setters: true)) {
       _addDispatchTarget(classNode, member);
     }
     // TODO(asgerf): Shake off unused instance fields.
@@ -549,6 +549,9 @@ class TreeShaker {
     if (!forceShaking && member.enclosingLibrary == _mirrorsLibrary) {
       throw new _UsingMirrorsException();
     }
+//    if (host.superclass != null && host.superclass.name == "GeneratedMessage" &&) {
+//      return;
+//    }
     if (host != null) {
       // Check if the member has been seen with this host before.
       int index = numberedClasses[host];
@@ -657,16 +660,16 @@ escapedClasses: ${_escapedClasses.length}
 final Node _setterSentinel = const InvalidType();
 
 /// Searches the AST for static references and dynamically dispatched names.
-class _TreeShakerVisitor extends RecursiveVisitor {
+class _ProtoShakerVisitor extends RecursiveVisitor {
   final Set<Constant> visitedConstants = new Set<Constant>();
 
-  final TreeShaker shaker;
+  final ProtoShaker shaker;
   final CoreTypes coreTypes;
   final TypeEnvironment types;
   final bool strongMode;
   List<Node> summary;
 
-  _TreeShakerVisitor(TreeShaker shaker)
+  _ProtoShakerVisitor(ProtoShaker shaker)
       : this.shaker = shaker,
         this.coreTypes = shaker.coreTypes,
         this.strongMode = shaker.strongMode,
@@ -678,25 +681,10 @@ class _TreeShakerVisitor extends RecursiveVisitor {
     print('[error] $message (${node.location})');
   }
 
-  bool isI = false;
-
   void analyzeAndBuildSummary(Member member, List<Node> summary) {
     this.summary = summary;
     types.thisType = member.enclosingClass?.thisType;
-
-    var enclosing = member.enclosingClass;
-    if (enclosing != null) {
-      if (enclosing.superclass != null) {
-        if (enclosing.superclass.name == "GeneratedMessage") {
-          if (member.name.name == "_i") {
-            isI = true;
-          }
-        }
-      }
-    }
-
     member.accept(this);
-    isI = false;
   }
 
   void visitMemberInterface(Member node) {
@@ -772,8 +760,6 @@ class _TreeShakerVisitor extends RecursiveVisitor {
     node.visitChildren(this);
   }
 
-  bool isA = false;
-
   @override
   visitConstructorInvocation(ConstructorInvocation node) {
     shaker._addInstantiatedClass(node.target.enclosingClass);
@@ -783,7 +769,6 @@ class _TreeShakerVisitor extends RecursiveVisitor {
 
   @override
   visitStaticInvocation(StaticInvocation node) {
-
     addStaticUse(node.target);
     node.visitChildren(this);
   }
@@ -828,17 +813,13 @@ class _TreeShakerVisitor extends RecursiveVisitor {
       shaker._addUsedInterfaceMember(node.interfaceTarget);
       shaker._typedCalls.add(node);
     }
-    isA = isI;
     node.visitChildren(this);
-    isA = false;
   }
 
   @override
   visitStaticGet(StaticGet node) {
-    if (!(isA && (node.target.name.name == "create" || node.target.name.name  == "getDefault"))) {
-      addStaticUse(node.target);
-      node.visitChildren(this);
-    }
+    addStaticUse(node.target);
+    node.visitChildren(this);
   }
 
   @override
@@ -1057,7 +1038,7 @@ enum ClassRetention {
 ///
 /// There must not be any dangling references in the program afterwards.
 class _TreeShakingTransformer extends Transformer {
-  final TreeShaker shaker;
+  final ProtoShaker shaker;
 
   _TreeShakingTransformer(this.shaker);
 
@@ -1119,9 +1100,9 @@ class _TreeShakingTransformer extends Transformer {
         return null; // Remove the class.
 
       case ClassRetention.Namespace:
-        // The class is only a namespace for static members.  Remove its
-        // hierarchy information.   This is mandatory, since these references
-        // might otherwise become dangling.
+      // The class is only a namespace for static members.  Remove its
+      // hierarchy information.   This is mandatory, since these references
+      // might otherwise become dangling.
         node.supertype = shaker.coreTypes.objectClass.asRawSupertype;
         node.implementedTypes.clear();
         node.typeParameters.clear();
@@ -1144,36 +1125,6 @@ class _TreeShakingTransformer extends Transformer {
   }
 
   Member defaultMember(Member node) {
-    '''
-        let final pro::BuilderInfo #t1 = new pro::BuilderInfo::•("Sample", packageName: "benchmark") in
-    let final dynamic #t2 = #t1.{pro::BuilderInfo::a}<core::int>(1, "duration", pro::PbFieldType::O3) in
-    let final dynamic #t3 = #t1.{pro::BuilderInfo::a}<core::int>(2, "loopCount", pro::PbFieldType::O3) in
-    let final dynamic #t4 = #t1.{pro::BuilderInfo::a}<pb::Counts>(3, "counts", pro::PbFieldType::OM, pb::Counts::getDefault, pb::Counts::create) in
-     let final dynamic #t5 = #t1.{pro::BuilderInfo::hasRequiredFields} = false in #t1;
-''';
-    if (node is Field && node.name.name == '_i') {
-      Let l1 = node.initializer;
-      Expression l2 = l1.body;
-      while (l2 is Let) {
-        Let ll2 = l2;
-        if (l2 is Let) {
-          VariableDeclaration v = ll2.variable;
-          print(v);
-          if (v.initializer is MethodInvocation) {
-            MethodInvocation p = v.initializer;
-            DartType arg = p.arguments.types.first;
-            print((arg as InterfaceType).classNode);
-            print(shaker.getClassRetention((arg as InterfaceType).classNode));
-            if (!shaker.isInstantiated((arg as InterfaceType).classNode)) {
-              print("BLAH!! $arg");
-              v.initializer = new NullLiteral();
-            }
-          }
-          l2 = ll2.body;
-        }
-      }
-
-    }
     if (!shaker.isMemberBodyUsed(node)) {
       if (!shaker.isMemberOverridden(node) &&
           !shaker.isMemberUsedInInterfaceTarget(node)) {
@@ -1208,7 +1159,7 @@ class _TreeShakingTransformer extends Transformer {
 }
 
 class _ExternalTypeVisitor extends DartTypeVisitor {
-  final TreeShaker shaker;
+  final ProtoShaker shaker;
   final bool isCovariant;
   final bool isContravariant;
   ClassHierarchy get hierarchy => shaker.hierarchy;
@@ -1241,6 +1192,8 @@ class _ExternalTypeVisitor extends DartTypeVisitor {
   }
 
   void visitVoidType(VoidType node) {}
+
+  void visitVectorType(VectorType node) {}
 
   void visitInterfaceType(InterfaceType node) {
     if (isCovariant) {
