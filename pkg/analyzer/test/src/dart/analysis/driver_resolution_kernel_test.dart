@@ -19,13 +19,6 @@ class AnalysisDriverResolutionTest_Kernel extends AnalysisDriverResolutionTest {
 
   @override
   @failingTest
-  @FastaProblem('https://github.com/dart-lang/sdk/issues/33795')
-  test_annotation_onDirective_partOf() async {
-    await super.test_annotation_onDirective_partOf();
-  }
-
-  @override
-  @failingTest
   test_generic_function_type() async {
     await super.test_generic_function_type();
   }
@@ -70,12 +63,6 @@ class AnalysisDriverResolutionTest_Kernel extends AnalysisDriverResolutionTest {
   @failingTest
   test_unresolved_assignment_left_indexed4_simple() async {
     await super.test_unresolved_assignment_left_indexed4_simple();
-  }
-
-  @override
-  @failingTest
-  test_unresolved_methodInvocation_target_unresolved() async {
-    await super.test_unresolved_methodInvocation_target_unresolved();
   }
 
   @override

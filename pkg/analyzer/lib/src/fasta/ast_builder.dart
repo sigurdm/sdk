@@ -7,6 +7,11 @@ import 'package:analyzer/dart/ast/ast_factory.dart' show AstFactory;
 import 'package:analyzer/dart/ast/standard_ast_factory.dart' as standard;
 import 'package:analyzer/dart/ast/token.dart' show Token, TokenType;
 import 'package:analyzer/error/listener.dart';
+import 'package:analyzer/src/dart/ast/ast.dart'
+    show
+        ClassDeclarationImpl,
+        ClassOrMixinDeclarationImpl,
+        MixinDeclarationImpl;
 import 'package:analyzer/src/fasta/error_converter.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
 import 'package:front_end/src/fasta/parser.dart'
@@ -69,7 +74,10 @@ class AstBuilder extends StackListener {
   bool parseGenericMethodComments = false;
 
   /// The class currently being parsed, or `null` if no class is being parsed.
-  ClassDeclaration classDeclaration;
+  ClassDeclarationImpl classDeclaration;
+
+  /// The mixin currently being parsed, or `null` if no mixin is being parsed.
+  MixinDeclarationImpl mixinDeclaration;
 
   /// If true, this is building a full AST. Otherwise, only create method
   /// bodies.
@@ -215,7 +223,8 @@ class AstBuilder extends StackListener {
       for (int i = 1; i < parts.length - 1; i++) {
         var part = parts[i];
         if (part is Token) {
-          elements.add(ast.interpolationString(part, part.lexeme));
+          elements.add(ast.interpolationString(
+              part, unescape(part.lexeme, quote, part, this)));
         } else if (part is InterpolationExpression) {
           elements.add(part);
         } else {
@@ -1144,8 +1153,13 @@ class AstBuilder extends StackListener {
   }
 
   @override
-  void endFormalParameter(Token thisKeyword, Token periodAfterThis,
-      Token nameToken, FormalParameterKind kind, MemberKind memberKind) {
+  void endFormalParameter(
+      Token thisKeyword,
+      Token periodAfterThis,
+      Token nameToken,
+      FormalParameterKind kind,
+      MemberKind memberKind,
+      Token endToken) {
     assert(optionalOrNull('this', thisKeyword));
     assert(thisKeyword == null
         ? periodAfterThis == null
@@ -1734,18 +1748,21 @@ class AstBuilder extends StackListener {
   }
 
   @override
-  void endClassBody(int memberCount, Token leftBracket, Token rightBracket) {
+  void endClassOrMixinBody(
+      int memberCount, Token leftBracket, Token rightBracket) {
     assert(optional('{', leftBracket));
     assert(optional('}', rightBracket));
-    debugEvent("ClassBody");
+    debugEvent("ClassOrMixinBody");
 
-    classDeclaration.leftBracket = leftBracket;
-    classDeclaration.rightBracket = rightBracket;
+    ClassOrMixinDeclarationImpl declaration =
+        classDeclaration ?? mixinDeclaration;
+    declaration.leftBracket = leftBracket;
+    declaration.rightBracket = rightBracket;
   }
 
   @override
   void beginClassDeclaration(Token begin, Token abstractToken, Token name) {
-    assert(classDeclaration == null);
+    assert(classDeclaration == null && mixinDeclaration == null);
     push(new _Modifiers()..abstractKeyword = abstractToken);
   }
 
@@ -1773,7 +1790,8 @@ class AstBuilder extends StackListener {
   }
 
   @override
-  void handleClassImplements(Token implementsKeyword, int interfacesCount) {
+  void handleClassOrMixinImplements(
+      Token implementsKeyword, int interfacesCount) {
     assert(optionalOrNull('implements', implementsKeyword));
     debugEvent("ClassImplements");
 
@@ -1789,7 +1807,7 @@ class AstBuilder extends StackListener {
   void handleClassHeader(Token begin, Token classKeyword, Token nativeToken) {
     assert(optional('class', classKeyword));
     assert(optionalOrNull('native', nativeToken));
-    assert(classDeclaration == null);
+    assert(classDeclaration == null && mixinDeclaration == null);
     debugEvent("ClassHeader");
 
     NativeClause nativeClause;
@@ -1805,7 +1823,8 @@ class AstBuilder extends StackListener {
     Token abstractKeyword = modifiers?.abstractKeyword;
     List<Annotation> metadata = pop();
     Comment comment = _findComment(metadata, begin);
-    // leftBracket, members, and rightBracket are set in [endClassBody].
+    // leftBracket, members, and rightBracket
+    // are set in [endClassOrMixinBody].
     classDeclaration = ast.classDeclaration(
       comment,
       metadata,
@@ -1820,6 +1839,7 @@ class AstBuilder extends StackListener {
       <ClassMember>[],
       null, // rightBracket
     );
+
     classDeclaration.nativeClause = nativeClause;
     declarations.add(classDeclaration);
   }
@@ -1858,6 +1878,58 @@ class AstBuilder extends StackListener {
   void endClassDeclaration(Token beginToken, Token endToken) {
     debugEvent("ClassDeclaration");
     classDeclaration = null;
+  }
+
+  @override
+  void beginMixinDeclaration(Token mixinKeyword, Token name) {
+    assert(classDeclaration == null && mixinDeclaration == null);
+  }
+
+  @override
+  void handleMixinOn(Token onKeyword, int typeCount) {
+    assert(optionalOrNull('on', onKeyword));
+    debugEvent("MixinOn");
+
+    if (onKeyword != null) {
+      List<TypeName> types = popTypedList(typeCount);
+      push(ast.onClause(onKeyword, types));
+    } else {
+      push(NullValue.IdentifierList);
+    }
+  }
+
+  @override
+  void handleMixinHeader(Token mixinKeyword) {
+    assert(optional('mixin', mixinKeyword));
+    assert(classDeclaration == null && mixinDeclaration == null);
+    debugEvent("MixinHeader");
+
+    ImplementsClause implementsClause = pop(NullValue.IdentifierList);
+    OnClause onClause = pop(NullValue.IdentifierList);
+    TypeParameterList typeParameters = pop();
+    SimpleIdentifier name = pop();
+    List<Annotation> metadata = pop();
+    Comment comment = _findComment(metadata, mixinKeyword);
+
+    mixinDeclaration = ast.mixinDeclaration(
+      comment,
+      metadata,
+      mixinKeyword,
+      name,
+      typeParameters,
+      onClause,
+      implementsClause,
+      null, // leftBracket
+      <ClassMember>[],
+      null, // rightBracket
+    );
+    declarations.add(mixinDeclaration);
+  }
+
+  @override
+  void endMixinDeclaration(Token token) {
+    debugEvent("MixinDeclaration");
+    mixinDeclaration = null;
   }
 
   @override
@@ -2088,20 +2160,21 @@ class AstBuilder extends StackListener {
           ast.simpleIdentifier(typeName.identifier.token, isDeclaration: true);
     }
 
-    classDeclaration.members.add(ast.constructorDeclaration(
-        comment,
-        metadata,
-        modifiers?.externalKeyword,
-        modifiers?.finalConstOrVarKeyword,
-        factoryKeyword,
-        ast.simpleIdentifier(returnType.token),
-        period,
-        name,
-        parameters,
-        separator,
-        null,
-        redirectedConstructor,
-        body));
+    (classDeclaration ?? mixinDeclaration).members.add(
+        ast.constructorDeclaration(
+            comment,
+            metadata,
+            modifiers?.externalKeyword,
+            modifiers?.finalConstOrVarKeyword,
+            factoryKeyword,
+            ast.simpleIdentifier(returnType.token),
+            period,
+            name,
+            parameters,
+            separator,
+            null,
+            redirectedConstructor,
+            body));
   }
 
   void endFieldInitializer(Token assignment, Token token) {
@@ -2304,6 +2377,9 @@ class AstBuilder extends StackListener {
           leftParen, <FormalParameter>[], null, null, rightParen);
     }
 
+    ClassOrMixinDeclarationImpl declaration =
+        classDeclaration ?? mixinDeclaration;
+
     void constructor(
         SimpleIdentifier prefixOrName, Token period, SimpleIdentifier name) {
       if (typeParameters != null) {
@@ -2324,7 +2400,7 @@ class AstBuilder extends StackListener {
         handleRecoverableError(messageConstructorWithReturnType,
             returnType.beginToken, returnType.beginToken);
       }
-      classDeclaration.members.add(ast.constructorDeclaration(
+      ConstructorDeclaration constructor = ast.constructorDeclaration(
           comment,
           metadata,
           modifiers?.externalKeyword,
@@ -2337,7 +2413,11 @@ class AstBuilder extends StackListener {
           separator,
           initializers,
           redirectedConstructor,
-          body));
+          body);
+      declaration.members.add(constructor);
+      if (mixinDeclaration != null) {
+        // TODO (danrubel): Report an error if this is a mixin declaration.
+      }
     }
 
     void method(Token operatorKeyword, SimpleIdentifier name) {
@@ -2349,7 +2429,7 @@ class AstBuilder extends StackListener {
             messageConstMethod, modifiers.constKeyword, modifiers.constKeyword);
       }
       checkFieldFormalParameters(parameters);
-      classDeclaration.members.add(ast.methodDeclaration(
+      declaration.members.add(ast.methodDeclaration(
           comment,
           metadata,
           modifiers?.externalKeyword,
@@ -2364,7 +2444,7 @@ class AstBuilder extends StackListener {
     }
 
     if (name is SimpleIdentifier) {
-      if (name.name == classDeclaration.name.name && getOrSet == null) {
+      if (name.name == declaration.name.name && getOrSet == null) {
         constructor(name, null, null);
       } else if (initializers.isNotEmpty) {
         constructor(name, null, null);
@@ -2496,7 +2576,7 @@ class AstBuilder extends StackListener {
     Token covariantKeyword = modifiers?.covariantKeyword;
     List<Annotation> metadata = pop();
     Comment comment = _findComment(metadata, beginToken);
-    classDeclaration.members.add(ast.fieldDeclaration2(
+    (classDeclaration ?? mixinDeclaration).members.add(ast.fieldDeclaration2(
         comment: comment,
         metadata: metadata,
         covariantKeyword: covariantKeyword,
@@ -2509,9 +2589,15 @@ class AstBuilder extends StackListener {
   AstNode finishFields() {
     debugEvent("finishFields");
 
-    return classDeclaration != null
-        ? classDeclaration.members.removeAt(classDeclaration.members.length - 1)
-        : declarations.removeLast();
+    if (classDeclaration != null) {
+      return classDeclaration.members
+          .removeAt(classDeclaration.members.length - 1);
+    } else if (mixinDeclaration != null) {
+      return mixinDeclaration.members
+          .removeAt(mixinDeclaration.members.length - 1);
+    } else {
+      return declarations.removeLast();
+    }
   }
 
   @override

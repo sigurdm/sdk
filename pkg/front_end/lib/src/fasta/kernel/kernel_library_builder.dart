@@ -65,8 +65,6 @@ import '../modifier.dart'
 
 import '../problems.dart' show unexpected, unhandled;
 
-import '../source/outline_listener.dart' show OutlineListener;
-
 import '../source/source_class_builder.dart' show SourceClassBuilder;
 
 import '../source/source_library_builder.dart'
@@ -150,13 +148,10 @@ class KernelLibraryBuilder
   /// the error message is the corresponding value in the map.
   Map<String, String> unserializableExports;
 
-  final OutlineListener outlineListener;
-
   KernelLibraryBuilder(Uri uri, Uri fileUri, Loader loader, this.actualOrigin,
       [Scope scope, Library target])
       : library = target ??
             (actualOrigin?.library ?? new Library(uri, fileUri: fileUri)),
-        outlineListener = loader.createOutlineListener(fileUri),
         super(loader, fileUri, scope);
 
   @override
@@ -279,9 +274,7 @@ class KernelLibraryBuilder
 
     members.forEach(setParentAndCheckConflicts);
     constructors.forEach(setParentAndCheckConflicts);
-    // Formally, a setter has the name `id=`, so it can never conflict with a
-    // type variable.
-    setters.forEach(setParent);
+    setters.forEach(setParentAndCheckConflicts);
     addBuilder(className, cls, charOffset);
   }
 
@@ -556,13 +549,19 @@ class KernelLibraryBuilder
       KernelTypeBuilder type,
       String name,
       int charOffset,
+      int codeStartOffset,
+      int codeEndOffset,
       Token initializerTokenForInference,
       bool hasInitializer) {
     var builder = new KernelFieldBuilder(metadata, type, name, modifiers, this,
         charOffset, initializerTokenForInference, hasInitializer);
     addBuilder(name, builder, charOffset);
-    loader.target.metadataCollector
-        ?.setDocumentationComment(builder.target, documentationComment);
+
+    var metadataCollector = loader.target.metadataCollector;
+    metadataCollector?.setDocumentationComment(
+        builder.target, documentationComment);
+    metadataCollector?.setCodeStartEnd(
+        builder.target, codeStartOffset, codeEndOffset);
   }
 
   void addConstructor(
@@ -578,6 +577,8 @@ class KernelLibraryBuilder
       int charOffset,
       int charOpenParenOffset,
       int charEndOffset,
+      int codeStartOffset,
+      int codeEndOffset,
       String nativeMethodName) {
     MetadataCollector metadataCollector = loader.target.metadataCollector;
     ProcedureBuilder procedure = new KernelConstructorBuilder(
@@ -596,6 +597,8 @@ class KernelLibraryBuilder
     metadataCollector?.setDocumentationComment(
         procedure.target, documentationComment);
     metadataCollector?.setConstructorNameOffset(procedure.target, name);
+    metadataCollector?.setCodeStartEnd(
+        procedure.target, codeStartOffset, codeEndOffset);
     checkTypeVariables(typeVariables, procedure);
     addBuilder(constructorName, procedure, charOffset);
     if (nativeMethodName != null) {
@@ -657,6 +660,8 @@ class KernelLibraryBuilder
       int charOffset,
       int charOpenParenOffset,
       int charEndOffset,
+      int codeStartOffset,
+      int codeEndOffset,
       String nativeMethodName) {
     KernelTypeBuilder returnType = addNamedType(
         currentDeclaration.parent.name, <KernelTypeBuilder>[], charOffset);
@@ -715,6 +720,8 @@ class KernelLibraryBuilder
     metadataCollector?.setDocumentationComment(
         procedure.target, documentationComment);
     metadataCollector?.setConstructorNameOffset(procedure.target, name);
+    metadataCollector?.setCodeStartEnd(
+        procedure.target, codeStartOffset, codeEndOffset);
 
     DeclarationBuilder<TypeBuilder> savedDeclaration = currentDeclaration;
     currentDeclaration = factoryDeclaration;
@@ -789,9 +796,11 @@ class KernelLibraryBuilder
       KernelTypeBuilder type,
       String name,
       bool hasThis,
-      int charOffset) {
-    return new KernelFormalParameterBuilder(
-        metadata, modifiers, type, name, hasThis, this, charOffset);
+      int charOffset,
+      int codeStartOffset,
+      int codeEndOffset) {
+    return new KernelFormalParameterBuilder(metadata, modifiers, type, name,
+        hasThis, this, charOffset, codeStartOffset, codeEndOffset);
   }
 
   KernelTypeVariableBuilder addTypeVariable(

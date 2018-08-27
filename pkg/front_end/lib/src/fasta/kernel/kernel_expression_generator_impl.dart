@@ -135,7 +135,8 @@ class ThisAccessGenerator extends KernelGenerator {
     }
   }
 
-  Expression buildAssignment(Expression value, {bool voidContext: false}) {
+  Expression buildAssignment(Expression value,
+      {bool voidContext: false, int offset: -1}) {
     return buildAssignmentError();
   }
 
@@ -260,7 +261,8 @@ class SendAccessGenerator extends IncompleteSendGenerator {
     return unsupported("buildSimpleRead", offsetForToken(token), uri);
   }
 
-  Expression buildAssignment(Expression value, {bool voidContext: false}) {
+  Expression buildAssignment(Expression value,
+      {bool voidContext: false, int offset: -1}) {
     return unsupported("buildAssignment", offsetForToken(token), uri);
   }
 
@@ -331,7 +333,8 @@ class IncompletePropertyAccessGenerator extends IncompleteSendGenerator {
     return unsupported("buildSimpleRead", offsetForToken(token), uri);
   }
 
-  Expression buildAssignment(Expression value, {bool voidContext: false}) {
+  Expression buildAssignment(Expression value,
+      {bool voidContext: false, int offset: -1}) {
     return unsupported("buildAssignment", offsetForToken(token), uri);
   }
 
@@ -373,6 +376,26 @@ class IncompletePropertyAccessGenerator extends IncompleteSendGenerator {
 
   Expression doInvocation(int offset, Arguments arguments) {
     return unsupported("doInvocation", offset, uri);
+  }
+}
+
+class KernelNonLValueGenerator extends KernelReadOnlyAccessGenerator {
+  KernelNonLValueGenerator(
+      ExpressionGeneratorHelper helper, Token token, Expression expression)
+      : super(helper, token, expression, null);
+
+  String get debugName => "KernelNonLValueGenerator";
+
+  @override
+  ComplexAssignmentJudgment startComplexAssignment(Expression rhs) {
+    return new IllegalAssignmentJudgment(rhs,
+        assignmentOffset: offsetForToken(token));
+  }
+
+  Expression makeInvalidWrite(Expression value) {
+    var error = helper.buildCompileTimeError(
+        messageNotAnLvalue, offsetForToken(token), lengthForToken(token));
+    return new InvalidWriteJudgment(error, expression);
   }
 }
 

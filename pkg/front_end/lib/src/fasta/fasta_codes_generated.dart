@@ -974,6 +974,18 @@ const MessageCode messageConstConstructorNonFinalFieldCause = const MessageCode(
     message: r"""Field isn't final, but constructor is 'const'.""");
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Null> codeConstConstructorRedirectionToNonConst =
+    messageConstConstructorRedirectionToNonConst;
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const MessageCode messageConstConstructorRedirectionToNonConst =
+    const MessageCode("ConstConstructorRedirectionToNonConst",
+        dart2jsCode: "*fatal*",
+        severity: Severity.error,
+        message:
+            r"""A constant constructor can't call a non-constant constructor.""");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
 const Code<Null> codeConstConstructorWithBody = messageConstConstructorWithBody;
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
@@ -2357,29 +2369,10 @@ Message _withArgumentsExpectedButGot(String string) {
 }
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
-const Template<Message Function(Token token)> templateExpectedClassBody =
-    const Template<Message Function(Token token)>(
-        messageTemplate: r"""Expected a class body, but got '#lexeme'.""",
-        withArguments: _withArgumentsExpectedClassBody);
-
-// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
-const Code<Message Function(Token token)> codeExpectedClassBody =
-    const Code<Message Function(Token token)>(
-        "ExpectedClassBody", templateExpectedClassBody,
-        analyzerCode: "MISSING_CLASS_BODY", dart2jsCode: "*fatal*");
-
-// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
-Message _withArgumentsExpectedClassBody(Token token) {
-  String lexeme = token.lexeme;
-  return new Message(codeExpectedClassBody,
-      message: """Expected a class body, but got '${lexeme}'.""",
-      arguments: {'token': token});
-}
-
-// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
 const Template<Message Function(Token token)> templateExpectedClassBodyToSkip =
     const Template<Message Function(Token token)>(
-        messageTemplate: r"""Expected a class body, but got '#lexeme'.""",
+        messageTemplate:
+            r"""Expected a class or mixin body, but got '#lexeme'.""",
         withArguments: _withArgumentsExpectedClassBodyToSkip);
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
@@ -2392,7 +2385,7 @@ const Code<Message Function(Token token)> codeExpectedClassBodyToSkip =
 Message _withArgumentsExpectedClassBodyToSkip(Token token) {
   String lexeme = token.lexeme;
   return new Message(codeExpectedClassBodyToSkip,
-      message: """Expected a class body, but got '${lexeme}'.""",
+      message: """Expected a class or mixin body, but got '${lexeme}'.""",
       arguments: {'token': token});
 }
 
@@ -2413,6 +2406,27 @@ Message _withArgumentsExpectedClassMember(Token token) {
   String lexeme = token.lexeme;
   return new Message(codeExpectedClassMember,
       message: """Expected a class member, but got '${lexeme}'.""",
+      arguments: {'token': token});
+}
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Template<Message Function(Token token)> templateExpectedClassOrMixinBody =
+    const Template<Message Function(Token token)>(
+        messageTemplate:
+            r"""Expected a class or mixin body, but got '#lexeme'.""",
+        withArguments: _withArgumentsExpectedClassOrMixinBody);
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Message Function(Token token)> codeExpectedClassOrMixinBody =
+    const Code<Message Function(Token token)>(
+        "ExpectedClassOrMixinBody", templateExpectedClassOrMixinBody,
+        analyzerCode: "MISSING_CLASS_BODY", dart2jsCode: "*fatal*");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+Message _withArgumentsExpectedClassOrMixinBody(Token token) {
+  String lexeme = token.lexeme;
+  return new Message(codeExpectedClassOrMixinBody,
+      message: """Expected a class or mixin body, but got '${lexeme}'.""",
       arguments: {'token': token});
 }
 
@@ -2944,6 +2958,9 @@ const MessageCode messageFastaUsageLong =
   --dump-ir
     Print compiled libraries in Kernel source notation.
 
+  --bytecode
+    Generate bytecode. Supported only for SDK platform compilation.
+
   --exclude-source
     Do not include source code in the dill file.
 
@@ -3005,6 +3022,66 @@ const MessageCode messageFinalAndVar = const MessageCode("FinalAndVar",
     dart2jsCode: "EXTRANEOUS_MODIFIER",
     message: r"""Members can't be declared to be both 'final' and 'var'.""",
     tip: r"""Try removing the keyword 'var'.""");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Template<
+    Message Function(
+        String
+            name)> templateFinalFieldNotInitialized = const Template<
+        Message Function(String name)>(
+    messageTemplate: r"""Final field '#name' is not initialized.""",
+    tipTemplate:
+        r"""Try to initialize the field in the declaration or in every constructor.""",
+    withArguments: _withArgumentsFinalFieldNotInitialized);
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Message Function(String name)> codeFinalFieldNotInitialized =
+    const Code<Message Function(String name)>(
+        "FinalFieldNotInitialized", templateFinalFieldNotInitialized,
+        analyzerCode: "FINAL_NOT_INITIALIZED",
+        dart2jsCode: "*fatal*",
+        severity: Severity.error);
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+Message _withArgumentsFinalFieldNotInitialized(String name) {
+  return new Message(codeFinalFieldNotInitialized,
+      message: """Final field '${name}' is not initialized.""",
+      tip:
+          """Try to initialize the field in the declaration or in every constructor.""",
+      arguments: {'name': name});
+}
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Template<
+    Message Function(
+        String
+            name)> templateFinalFieldNotInitializedByConstructor = const Template<
+        Message Function(String name)>(
+    messageTemplate:
+        r"""Final field '#name' is not initialized by this constructor.""",
+    tipTemplate:
+        r"""Try to initialize the field using an initializing formal or a field initializer.""",
+    withArguments: _withArgumentsFinalFieldNotInitializedByConstructor);
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Message Function(String name)>
+    codeFinalFieldNotInitializedByConstructor =
+    const Code<Message Function(String name)>(
+        "FinalFieldNotInitializedByConstructor",
+        templateFinalFieldNotInitializedByConstructor,
+        analyzerCode: "FINAL_NOT_INITIALIZED_CONSTRUCTOR_1",
+        dart2jsCode: "*fatal*",
+        severity: Severity.error);
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+Message _withArgumentsFinalFieldNotInitializedByConstructor(String name) {
+  return new Message(codeFinalFieldNotInitializedByConstructor,
+      message:
+          """Final field '${name}' is not initialized by this constructor.""",
+      tip:
+          """Try to initialize the field using an initializing formal or a field initializer.""",
+      arguments: {'name': name});
+}
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
 const Template<
@@ -3423,6 +3500,64 @@ const MessageCode messageImplementsBeforeWith = const MessageCode(
     dart2jsCode: "*ignored*",
     message: r"""The with clause must be before the implements clause.""",
     tip: r"""Try moving the with clause before the implements clause.""");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Null> codeImplementsFutureOr = messageImplementsFutureOr;
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const MessageCode messageImplementsFutureOr = const MessageCode(
+    "ImplementsFutureOr",
+    dart2jsCode: "*fatal*",
+    severity: Severity.error,
+    message: r"""'FutureOr' can't be used in an 'implements' clause.""");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Template<Message Function(String name, int count)>
+    templateImplementsRepeated =
+    const Template<Message Function(String name, int count)>(
+        messageTemplate: r"""'#name' can only be implemented once.""",
+        tipTemplate: r"""Try removing #count of the occurrences.""",
+        withArguments: _withArgumentsImplementsRepeated);
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Message Function(String name, int count)> codeImplementsRepeated =
+    const Code<Message Function(String name, int count)>(
+        "ImplementsRepeated", templateImplementsRepeated,
+        analyzerCode: "IMPLEMENTS_REPEATED", dart2jsCode: "*fatal*");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+Message _withArgumentsImplementsRepeated(String name, int count) {
+  return new Message(codeImplementsRepeated,
+      message: """'${name}' can only be implemented once.""",
+      tip: """Try removing ${count} of the occurrences.""",
+      arguments: {'name': name, 'count': count});
+}
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Template<
+    Message Function(
+        String
+            name)> templateImplementsSuperClass = const Template<
+        Message Function(String name)>(
+    messageTemplate:
+        r"""'#name' can't be used in both 'extends' and 'implements' clauses.""",
+    tipTemplate: r"""Try removing one of the occurrences.""",
+    withArguments: _withArgumentsImplementsSuperClass);
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Message Function(String name)> codeImplementsSuperClass =
+    const Code<Message Function(String name)>(
+        "ImplementsSuperClass", templateImplementsSuperClass,
+        analyzerCode: "IMPLEMENTS_SUPER_CLASS", dart2jsCode: "*fatal*");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+Message _withArgumentsImplementsSuperClass(String name) {
+  return new Message(codeImplementsSuperClass,
+      message:
+          """'${name}' can't be used in both 'extends' and 'implements' clauses.""",
+      tip: """Try removing one of the occurrences.""",
+      arguments: {'name': name});
+}
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
 const Template<
@@ -5095,6 +5230,18 @@ Message _withArgumentsMixinInferenceNoMatchingClass(
 }
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Null> codeMoreThanOneSuperOrThisInitializer =
+    messageMoreThanOneSuperOrThisInitializer;
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const MessageCode messageMoreThanOneSuperOrThisInitializer = const MessageCode(
+    "MoreThanOneSuperOrThisInitializer",
+    analyzerCode: "SUPER_IN_REDIRECTING_CONSTRUCTOR",
+    dart2jsCode: "*fatal*",
+    severity: Severity.error,
+    message: r"""Can't have more than one 'super' or 'this' initializer.""");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
 const Code<Null> codeMultipleExtends = messageMultipleExtends;
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
@@ -6503,7 +6650,20 @@ const Code<Null> codeSuperAsIdentifier = messageSuperAsIdentifier;
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
 const MessageCode messageSuperAsIdentifier = const MessageCode(
     "SuperAsIdentifier",
+    analyzerCode: "SUPER_AS_EXPRESSION",
+    dart2jsCode: "*fatal*",
     message: r"""Expected identifier, but got 'super'.""");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Null> codeSuperInitializerNotLast = messageSuperInitializerNotLast;
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const MessageCode messageSuperInitializerNotLast = const MessageCode(
+    "SuperInitializerNotLast",
+    analyzerCode: "INVALID_SUPER_INVOCATION",
+    dart2jsCode: "*fatal*",
+    severity: Severity.error,
+    message: r"""Can't have initializers after 'super'.""");
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
 const Code<Null> codeSuperNullAware = messageSuperNullAware;
@@ -6747,6 +6907,17 @@ const MessageCode messageThisAsIdentifier = const MessageCode(
     dart2jsCode: "*fatal*",
     severity: Severity.error,
     message: r"""Expected identifier, but got 'this'.""");
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const Code<Null> codeThisInitializerNotAlone = messageThisInitializerNotAlone;
+
+// DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
+const MessageCode messageThisInitializerNotAlone = const MessageCode(
+    "ThisInitializerNotAlone",
+    analyzerCode: "FIELD_INITIALIZER_REDIRECTING_CONSTRUCTOR",
+    dart2jsCode: "*fatal*",
+    severity: Severity.error,
+    message: r"""Can't have other initializers together with 'this'.""");
 
 // DO NOT EDIT. THIS FILE IS GENERATED. SEE TOP OF FILE.
 const Template<Message Function(String string)>

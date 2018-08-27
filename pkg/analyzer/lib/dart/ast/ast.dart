@@ -448,6 +448,7 @@ abstract class AstNode implements SyntacticEntity {
   /**
    * An empty list of AST nodes.
    */
+  @deprecated
   static const List<AstNode> EMPTY_LIST = const <AstNode>[];
 
   /**
@@ -716,6 +717,8 @@ abstract class AstVisitor<R> {
 
   R visitMethodInvocation(MethodInvocation node);
 
+  R visitMixinDeclaration(MixinDeclaration node);
+
   R visitNamedExpression(NamedExpression node);
 
   R visitNativeClause(NativeClause node);
@@ -723,6 +726,8 @@ abstract class AstVisitor<R> {
   R visitNativeFunctionBody(NativeFunctionBody node);
 
   R visitNullLiteral(NullLiteral node);
+
+  R visitOnClause(OnClause node);
 
   R visitParenthesizedExpression(ParenthesizedExpression node);
 
@@ -1541,15 +1546,15 @@ abstract class CompilationUnit extends AstNode {
   NodeList<CompilationUnitMember> get declarations;
 
   /**
-   * Return the directives contained in this compilation unit.
-   */
-  NodeList<Directive> get directives;
-
-  /**
    * Return the element associated with this compilation unit, or `null` if the
    * AST structure has not been resolved.
    */
   CompilationUnitElement get declaredElement;
+
+  /**
+   * Return the directives contained in this compilation unit.
+   */
+  NodeList<Directive> get directives;
 
   /**
    * Return the element associated with this compilation unit, or `null` if the
@@ -2593,6 +2598,7 @@ abstract class Expression extends AstNode {
   /**
    * An empty list of expressions.
    */
+  @deprecated
   static const List<Expression> EMPTY_LIST = const <Expression>[];
 
   /**
@@ -5170,6 +5176,67 @@ abstract class MethodReferenceExpression {
 }
 
 /**
+ * The declaration of a mixin.
+ *
+ *    mixinDeclaration ::=
+ *        metadata? 'mixin' [SimpleIdentifier] [TypeParameterList]?
+ *        [OnClause]? [ImplementsClause]? '{' [ClassMember]* '}'
+ *
+ * Clients may not extend, implement or mix-in this class.
+ */
+abstract class MixinDeclaration extends NamedCompilationUnitMember {
+  /**
+   * Return the implements clause for the mixin, or `null` if the mixin does not
+   * implement any interfaces.
+   */
+  ImplementsClause get implementsClause;
+
+  /**
+   * Return the left curly bracket.
+   */
+  Token get leftBracket;
+
+  /**
+   * Return the members defined by the mixin.
+   */
+  NodeList<ClassMember> get members;
+
+  /**
+   * Return the token representing the 'mixin' keyword.
+   */
+  Token get mixinKeyword;
+
+  /**
+   * Return the on clause for the mixin, or `null` if the mixin does not have
+   * any superclass constraints.
+   */
+  OnClause get onClause;
+
+  /**
+   * Return the right curly bracket.
+   */
+  Token get rightBracket;
+
+  /**
+   * Return the type parameters for the mixin, or `null` if the mixin does not
+   * have any type parameters.
+   */
+  TypeParameterList get typeParameters;
+
+  /**
+   * Return the field declared in the mixin with the given [name], or `null` if
+   * there is no such field.
+   */
+  VariableDeclaration getField(String name);
+
+  /**
+   * Return the method declared in the mixin with the given [name], or `null` if
+   * there is no such method.
+   */
+  MethodDeclaration getMethod(String name);
+}
+
+/**
  * A node that declares a single name within the scope of a compilation unit.
  *
  * Clients may not extend, implement or mix-in this class.
@@ -5526,6 +5593,26 @@ abstract class NullLiteral extends Literal {
    * Set the token representing the literal to the given [token].
    */
   void set literal(Token token);
+}
+
+/**
+ * The "on" clause in a mixin declaration.
+ *
+ *    onClause ::=
+ *        'on' [TypeName] (',' [TypeName])*
+ *
+ * Clients may not extend, implement or mix-in this class.
+ */
+abstract class OnClause extends AstNode {
+  /**
+   * Return the token representing the 'on' keyword.
+   */
+  Token get onKeyword;
+
+  /**
+   * Return the list of the classes are superclass constraints for the mixin.
+   */
+  NodeList<TypeName> get superclassConstraints;
 }
 
 /**

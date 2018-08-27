@@ -489,6 +489,9 @@ void ClosureCallInstr::PrintOperandsTo(BufferFormatter* f) const {
     f->Print(", ");
     PushArgumentAt(i)->value()->PrintTo(f);
   }
+  if (entry_kind() == Code::EntryKind::kUnchecked) {
+    f->Print(" using unchecked entrypoint");
+  }
 }
 
 void InstanceCallInstr::PrintOperandsTo(BufferFormatter* f) const {
@@ -516,6 +519,9 @@ void PolymorphicInstanceCallInstr::PrintOperandsTo(BufferFormatter* f) const {
   PrintTargetsHelper(f, targets_, FlowGraphPrinter::kPrintAll);
   if (complete()) {
     f->Print(" COMPLETE");
+  }
+  if (instance_call()->entry_kind() == Code::EntryKind::kUnchecked) {
+    f->Print(" using unchecked entrypoint");
   }
 }
 
@@ -559,6 +565,9 @@ void StaticCallInstr::PrintOperandsTo(BufferFormatter* f) const {
   for (intptr_t i = 0; i < ArgumentCount(); ++i) {
     if (i > 0) f->Print(", ");
     PushArgumentAt(i)->value()->PrintTo(f);
+  }
+  if (entry_kind() == Code::EntryKind::kUnchecked) {
+    f->Print(", using unchecked entrypoint");
   }
 }
 
@@ -651,16 +660,8 @@ void LoadFieldInstr::PrintOperandsTo(BufferFormatter* f) const {
   f->Print(", %" Pd, offset_in_bytes());
 
   if (field() != nullptr) {
-    f->Print(" {%s}", String::Handle(field()->name()).ToCString());
-    const char* expected = "?";
-    if (field()->guarded_cid() != kIllegalCid) {
-      const Class& cls = Class::Handle(
-          Isolate::Current()->class_table()->At(field()->guarded_cid()));
-      expected = String::Handle(cls.Name()).ToCString();
-    }
-
-    f->Print(" [%s %s]", field()->is_nullable() ? "nullable" : "non-nullable",
-             expected);
+    f->Print(" {%s} %s", String::Handle(field()->name()).ToCString(),
+             field()->GuardedPropertiesAsCString());
   }
 
   if (native_field() != nullptr) {

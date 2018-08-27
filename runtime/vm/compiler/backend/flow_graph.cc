@@ -407,7 +407,9 @@ void FlowGraph::ComputeIsReceiver(PhiInstr* phi) const {
 bool FlowGraph::IsReceiver(Definition* def) const {
   def = def->OriginalDefinition();  // Could be redefined.
   if (def->IsParameter()) return (def->AsParameter()->index() == 0);
-  if (!def->IsPhi() || graph_entry()->catch_entries().is_empty()) return false;
+  if (!def->IsPhi() || graph_entry()->HasSingleEntryPoint()) {
+    return false;
+  }
   PhiInstr* phi = def->AsPhi();
   if (phi->is_receiver() != PhiInstr::kUnknownReceiver) {
     return (phi->is_receiver() == PhiInstr::kReceiver);
@@ -1405,7 +1407,7 @@ void FlowGraph::RenameRecursive(BlockEntryInstr* block_entry,
 void FlowGraph::RemoveDeadPhis(GrowableArray<PhiInstr*>* live_phis) {
   // Augment live_phis with those that have implicit real used at
   // potentially throwing instructions if there is a try-catch in this graph.
-  if (graph_entry()->SuccessorCount() > 1) {
+  if (!graph_entry()->catch_entries().is_empty()) {
     for (BlockIterator it(postorder_iterator()); !it.Done(); it.Advance()) {
       JoinEntryInstr* join = it.Current()->AsJoinEntry();
       if (join == NULL) continue;
@@ -1691,7 +1693,7 @@ void FlowGraph::InsertConversionsFor(Definition* def) {
     ConvertUse(it.Current(), from_rep);
   }
 
-  if (graph_entry()->SuccessorCount() > 1) {
+  if (!graph_entry()->catch_entries().is_empty()) {
     for (Value::Iterator it(def->env_use_list()); !it.Done(); it.Advance()) {
       Value* use = it.Current();
       if (use->instruction()->MayThrow() &&

@@ -114,6 +114,8 @@ import 'kernel_ast_api.dart';
 
 import 'kernel_builder.dart';
 
+import 'kernel_expression_generator.dart' show KernelNonLValueGenerator;
+
 import 'type_algorithms.dart' show calculateBounds;
 
 // TODO(ahe): Remove this and ensure all nodes have a location.
@@ -593,7 +595,7 @@ abstract class BodyBuilder extends ScopeListener<JumpTarget>
                   formal.charOffset, new VariableGet(formal.declaration),
                   formalType: formal.declaration.type);
             }
-            member.addInitializer(initializer, _typeInferrer);
+            member.addInitializer(initializer, this);
           }
         }
       }
@@ -657,7 +659,7 @@ abstract class BodyBuilder extends ScopeListener<JumpTarget>
     }
     _typeInferrer.inferInitializer(this, initializer);
     if (member is KernelConstructorBuilder && !member.isExternal) {
-      member.addInitializer(initializer, _typeInferrer);
+      member.addInitializer(initializer, this);
     } else {
       addCompileTimeError(
           fasta.templateInitializerOutsideConstructor
@@ -1096,12 +1098,14 @@ abstract class BodyBuilder extends ScopeListener<JumpTarget>
         Expression argument = toValue(node);
         arguments[i] = argument;
         if (i > firstNamedArgumentIndex) {
-          arguments[i] = new NamedExpression(
-              "#$i",
+          arguments[i] = new NamedExpressionJudgment(
+              tokensSaver?.namedExpressionTokens(null, null),
+              '#$i',
               buildCompileTimeErrorExpression(
                   fasta.messageExpectedNamedArgument,
-                  forest.readOffset(argument)))
-            ..fileOffset = beginToken.charOffset;
+                  forest.readOffset(argument)),
+              originalValue: argument)
+            ..fileOffset = offsetForToken(beginToken);
         }
       }
     }
@@ -2038,16 +2042,15 @@ abstract class BodyBuilder extends ScopeListener<JumpTarget>
   void handleAssignmentExpression(Token token) {
     debugEvent("AssignmentExpression");
     Expression value = popForValue();
-    Object generator = pop();
-    if (generator is! Generator) {
-      push(new SyntheticExpressionJudgment(buildCompileTimeError(
-          fasta.messageNotAnLvalue,
-          offsetForToken(token),
-          lengthForToken(token))));
+    Object lhs = pop();
+    Generator generator;
+    if (lhs is Generator) {
+      generator = lhs;
     } else {
-      push(new DelayedAssignment(
-          this, token, generator, value, token.stringValue));
+      generator = new KernelNonLValueGenerator(this, token, lhs);
     }
+    push(new DelayedAssignment(
+        this, token, generator, value, token.stringValue));
   }
 
   @override
@@ -2460,8 +2463,13 @@ abstract class BodyBuilder extends ScopeListener<JumpTarget>
   }
 
   @override
-  void endFormalParameter(Token thisKeyword, Token periodAfterThis,
-      Token nameToken, FormalParameterKind kind, MemberKind memberKind) {
+  void endFormalParameter(
+      Token thisKeyword,
+      Token periodAfterThis,
+      Token nameToken,
+      FormalParameterKind kind,
+      MemberKind memberKind,
+      Token endToken) {
     debugEvent("FormalParameter");
     if (thisKeyword != null) {
       if (!inConstructor) {
@@ -2770,27 +2778,29 @@ abstract class BodyBuilder extends ScopeListener<JumpTarget>
   @override
   void handleUnaryPrefixAssignmentExpression(Token token) {
     debugEvent("UnaryPrefixAssignmentExpression");
-    Object generator = pop();
-    if (generator is Generator) {
-      push(generator.buildPrefixIncrement(incrementOperator(token),
-          offset: token.charOffset));
+    Object target = pop();
+    Generator generator;
+    if (target is Generator) {
+      generator = target;
     } else {
-      push(
-          wrapInCompileTimeError(toValue(generator), fasta.messageNotAnLvalue));
+      generator = new KernelNonLValueGenerator(this, token, toValue(target));
     }
+    push(generator.buildPrefixIncrement(incrementOperator(token),
+        offset: token.charOffset));
   }
 
   @override
   void handleUnaryPostfixAssignmentExpression(Token token) {
     debugEvent("UnaryPostfixAssignmentExpression");
-    Object generator = pop();
-    if (generator is Generator) {
-      push(new DelayedPostfixIncrement(
-          this, token, generator, incrementOperator(token), null));
+    Object target = pop();
+    Generator generator;
+    if (target is Generator) {
+      generator = target;
     } else {
-      push(
-          wrapInCompileTimeError(toValue(generator), fasta.messageNotAnLvalue));
+      generator = new KernelNonLValueGenerator(this, token, toValue(target));
     }
+    push(new DelayedPostfixIncrement(
+        this, token, generator, incrementOperator(token), null));
   }
 
   @override
@@ -4095,9 +4105,10 @@ abstract class BodyBuilder extends ScopeListener<JumpTarget>
 
   @override
   Expression buildCompileTimeErrorExpression(Message message, int offset,
-      {int length}) {
+      {int length, Expression original}) {
     return new SyntheticExpressionJudgment(
-        buildCompileTimeError(message, offset, length ?? noLength));
+        buildCompileTimeError(message, offset, length ?? noLength),
+        original: original);
   }
 
   Expression wrapInCompileTimeError(Expression expression, Message message,
@@ -4198,7 +4209,9 @@ abstract class BodyBuilder extends ScopeListener<JumpTarget>
       Statement statement, Message message) {
     // TODO(askesc): Produce explicit error statement wrapping the original.
     // See [issue 29717](https://github.com/dart-lang/sdk/issues/29717)
-    return buildCompileTimeErrorStatement(message, statement.fileOffset);
+    var error = buildCompileTimeErrorStatement(message, statement.fileOffset);
+    statement.parent = error; // to avoid dangling statement
+    return error;
   }
 
   @override
@@ -4332,7 +4345,7 @@ abstract class BodyBuilder extends ScopeListener<JumpTarget>
           constructor,
           forest.castArguments(arguments),
           buildCompileTimeError(fasta.messageConstConstructorWithNonConstSuper,
-              charOffset, member.name.length),
+              charOffset, constructor.name.name.length),
           charOffset);
     }
     needsImplicitSuperInitializer = false;

@@ -95,10 +95,10 @@ class IdentifierContext {
   static const enumValueDeclaration =
       const EnumValueDeclarationIdentifierContext();
 
-  /// Identifier is the name being declared by a class declaration or a named
-  /// mixin application, for example, `Foo` in `class Foo = X with Y;`.
-  static const classOrNamedMixinDeclaration =
-      const ClassOrNamedMixinIdentifierContext();
+  /// Identifier is the name being declared by a class declaration, a mixin
+  /// declaration, or a named mixin application, for example,
+  /// `Foo` in `class Foo = X with Y;`.
+  static const classOrMixinDeclaration = const ClassOrMixinIdentifierContext();
 
   /// Identifier is the name of a type variable being declared (e.g. `Foo` in
   /// `class C<Foo extends num> {}`).
@@ -240,6 +240,9 @@ class IdentifierContext {
   /// expressions are required.
   final bool allowedInConstantExpression;
 
+  /// Indicated whether the `isSynthetic` flag is required for the identifier.
+  final bool requiresSyntheticFlag;
+
   final Template<_MessageWithArgument<Token>> recoveryTemplate;
 
   const IdentifierContext(this._name,
@@ -249,6 +252,7 @@ class IdentifierContext {
       this.isContinuation: false,
       this.isScopeReference: false,
       this.isBuiltInIdentifierAllowed: true,
+      this.requiresSyntheticFlag: false,
       bool allowedInConstantExpression,
       this.recoveryTemplate: templateExpectedIdentifier})
       : this.allowedInConstantExpression =

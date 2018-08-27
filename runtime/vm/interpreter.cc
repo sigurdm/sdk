@@ -556,7 +556,6 @@ Interpreter::Interpreter()
   stack_limit_ = stack_base_ + OSThread::GetSpecifiedStackSize();
 
   last_setjmp_buffer_ = NULL;
-  top_exit_frame_info_ = 0;
 
   DEBUG_ONLY(icount_ = 1);  // So that tracing after 0 traces first bytecode.
 }
@@ -1521,7 +1520,6 @@ DART_FORCE_INLINE void Interpreter::PrepareForTailCall(
       ASSERT(reinterpret_cast<uword>(fp_) < stack_limit());                    \
       return special_[kExceptionSpecialIndex];                                 \
     }                                                                          \
-    pp_ = InterpreterHelpers::FrameCode(FP)->ptr()->object_pool_;              \
     goto DispatchAfterException;                                               \
   } while (0)
 
@@ -1542,7 +1540,6 @@ DART_FORCE_INLINE void Interpreter::PrepareForTailCall(
       thread->set_vm_tag(vm_tag);                                              \
       return special_[kExceptionSpecialIndex];                                 \
     }                                                                          \
-    pp_ = InterpreterHelpers::FrameCode(FP)->ptr()->object_pool_;              \
     goto DispatchAfterException;                                               \
   } while (0)
 
@@ -1833,6 +1830,26 @@ RawObject* Interpreter::Call(RawFunction* function,
   {
     BYTECODE(Entry, A_D);
     const uint16_t num_locals = rD;
+
+    // Initialize locals with null & set SP.
+    for (intptr_t i = 0; i < num_locals; i++) {
+      FP[i] = null_value;
+    }
+    SP = FP + num_locals - 1;
+
+    DISPATCH();
+  }
+
+  {
+    BYTECODE(EntryFixed, A_D);
+    const uint16_t num_fixed_params = rA;
+    const uint16_t num_locals = rD;
+
+    const intptr_t arg_count = InterpreterHelpers::ArgDescArgCount(argdesc_);
+    const intptr_t pos_count = InterpreterHelpers::ArgDescPosCount(argdesc_);
+    if ((arg_count != num_fixed_params) || (pos_count != num_fixed_params)) {
+      goto ClosureNoSuchMethod;
+    }
 
     // Initialize locals with null & set SP.
     for (intptr_t i = 0; i < num_locals; i++) {
@@ -2523,14 +2540,17 @@ RawObject* Interpreter::Call(RawFunction* function,
           INVOKE_RUNTIME(DRT_AllocateArray, native_args);
           SP -= 1;  // Result is in SP - 1.
         } else {
-          // SP[0] is type.
-          *++SP = Smi::New(0);  // len
-          *++SP = thread->isolate()->object_store()->growable_list_factory();
+          ASSERT(InterpreterHelpers::ArgDescPosCount(argdesc_) == 1);
+          // SP[-1] is type.
+          // The native wrapper pushed null as the optional length argument.
+          ASSERT(SP[0] == null_value);
+          SP[0] = Smi::New(0);  // Patch null length with zero length.
+          SP[1] = thread->isolate()->object_store()->growable_list_factory();
           // Change the ArgumentsDescriptor of the call with a new cached one.
           argdesc_ = ArgumentsDescriptor::New(
               0, KernelBytecode::kNativeCallToGrowableListArgc);
           // Note the special handling of the return of this call in DecodeArgc.
-          if (!Invoke(thread, SP - 2, SP, &pc, &FP, &SP)) {
+          if (!Invoke(thread, SP - 1, SP + 1, &pc, &FP, &SP)) {
             HANDLE_EXCEPTION;
           }
         }
@@ -4437,6 +4457,15 @@ RawObject* Interpreter::Call(RawFunction* function,
   }
 
   {
+    BYTECODE(JumpIfNotZeroTypeArgs, 0);
+    if (InterpreterHelpers::ArgDescTypeArgsLen(argdesc_) != 0) {
+      const int32_t target = static_cast<int32_t>(op) >> 8;
+      pc += (target - 1);
+    }
+    DISPATCH();
+  }
+
+  {
     BYTECODE(LoadClassId, A_D);
     const uint16_t object_reg = rD;
     RawObject* obj = static_cast<RawObject*>(FP[object_reg]);
@@ -4764,6 +4793,7 @@ RawObject* Interpreter::Call(RawFunction* function,
   // Single dispatch point used by exception handling macros.
   {
   DispatchAfterException:
+    pp_ = InterpreterHelpers::FrameCode(FP)->ptr()->object_pool_;
     DISPATCH();
   }
 

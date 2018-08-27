@@ -77,13 +77,6 @@ class CompileTimeErrorCodeTest_Kernel extends CompileTimeErrorCodeTest_Driver {
 
   @override
   @failingTest
-  @FastaProblem('https://github.com/dart-lang/sdk/issues/33827')
-  test_conflictingTypeVariableAndMember_setter() async {
-    await super.test_conflictingTypeVariableAndMember_setter();
-  }
-
-  @override
-  @failingTest
   test_constConstructorWithNonFinalField_super() async {
     await super.test_constConstructorWithNonFinalField_super();
   }
@@ -308,21 +301,8 @@ class CompileTimeErrorCodeTest_Kernel extends CompileTimeErrorCodeTest_Driver {
 
   @override
   @failingTest
-  test_fieldInitializerRedirectingConstructor_afterRedirection() async {
-    return super.test_fieldInitializerRedirectingConstructor_afterRedirection();
-  }
-
-  @override
-  @failingTest
-  test_fieldInitializerRedirectingConstructor_beforeRedirection() async {
-    return super
-        .test_fieldInitializerRedirectingConstructor_beforeRedirection();
-  }
-
-  @override
-  @failingTest
-  test_fieldInitializingFormalRedirectingConstructor() async {
-    return super.test_fieldInitializingFormalRedirectingConstructor();
+  test_forInWithConstVariable_forEach_identifier() async {
+    return super.test_forInWithConstVariable_forEach_identifier();
   }
 
   @override
@@ -457,38 +437,8 @@ class CompileTimeErrorCodeTest_Kernel extends CompileTimeErrorCodeTest_Driver {
 
   @override
   @failingTest
-  test_implementsRepeated() async {
-    await super.test_implementsRepeated();
-  }
-
-  @override
-  @failingTest
   test_implementsRepeated_3times() async {
     await super.test_implementsRepeated_3times();
-  }
-
-  @override
-  @failingTest
-  test_implementsSuperClass() async {
-    await super.test_implementsSuperClass();
-  }
-
-  @override
-  @failingTest
-  test_implementsSuperClass_Object() async {
-    await super.test_implementsSuperClass_Object();
-  }
-
-  @override
-  @failingTest
-  test_implementsSuperClass_Object_typeAlias() async {
-    await super.test_implementsSuperClass_Object_typeAlias();
-  }
-
-  @override
-  @failingTest
-  test_implementsSuperClass_typeAlias() async {
-    await super.test_implementsSuperClass_typeAlias();
   }
 
   @override
@@ -1245,20 +1195,8 @@ class CompileTimeErrorCodeTest_Kernel extends CompileTimeErrorCodeTest_Driver {
 
   @override
   @failingTest
-  test_superInInvalidContext_binaryExpression() async {
-    await super.test_superInInvalidContext_binaryExpression();
-  }
-
-  @override
-  @failingTest
   test_superInInvalidContext_constructorFieldInitializer() async {
     await super.test_superInInvalidContext_constructorFieldInitializer();
-  }
-
-  @override
-  @failingTest
-  test_superInInvalidContext_factoryConstructor() async {
-    await super.test_superInInvalidContext_factoryConstructor();
   }
 
   @override
@@ -1268,39 +1206,9 @@ class CompileTimeErrorCodeTest_Kernel extends CompileTimeErrorCodeTest_Driver {
   }
 
   @override
-  @failingTest
-  test_superInInvalidContext_staticMethod() async {
-    await super.test_superInInvalidContext_staticMethod();
-  }
-
-  @override
-  @failingTest
-  test_superInInvalidContext_staticVariableInitializer() async {
-    await super.test_superInInvalidContext_staticVariableInitializer();
-  }
-
-  @override
-  @failingTest
-  test_superInInvalidContext_topLevelFunction() async {
-    await super.test_superInInvalidContext_topLevelFunction();
-  }
-
-  @override
-  @failingTest
-  test_superInInvalidContext_topLevelVariableInitializer() async {
-    await super.test_superInInvalidContext_topLevelVariableInitializer();
-  }
-
-  @override
-  @failingTest
-  test_superInRedirectingConstructor_redirectionSuper() async {
-    return super.test_superInRedirectingConstructor_redirectionSuper();
-  }
-
-  @override
-  @failingTest
+  @failingTest // Deliberately only reports one of the expected errors.
   test_superInRedirectingConstructor_superRedirection() async {
-    return super.test_superInRedirectingConstructor_superRedirection();
+    await super.test_superInRedirectingConstructor_superRedirection();
   }
 
   @override

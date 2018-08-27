@@ -580,6 +580,7 @@ struct InstrAttrs {
   /*We could be more precise about when these 2 instructions can trigger GC.*/ \
   M(GuardFieldClass, _)                                                        \
   M(GuardFieldLength, _)                                                       \
+  M(GuardFieldType, _)                                                         \
   M(IfThenElse, kNoGC)                                                         \
   M(MaterializeObject, _)                                                      \
   M(TestSmi, kNoGC)                                                            \
@@ -1520,6 +1521,11 @@ class GraphEntryInstr : public BlockEntryInstr {
     fixed_slot_count_ = count;
   }
   TargetEntryInstr* normal_entry() const { return normal_entry_; }
+  TargetEntryInstr* unchecked_entry() const { return unchecked_entry_; }
+  void set_normal_entry(TargetEntryInstr* entry) { normal_entry_ = entry; }
+  void set_unchecked_entry(TargetEntryInstr* target) {
+    unchecked_entry_ = target;
+  }
 
   const ParsedFunction& parsed_function() const { return parsed_function_; }
 
@@ -1531,6 +1537,17 @@ class GraphEntryInstr : public BlockEntryInstr {
     return indirect_entries_;
   }
 
+  bool IsEntryPoint(BlockEntryInstr* entry) const {
+    if (TargetEntryInstr* target = entry->AsTargetEntry()) {
+      return target == normal_entry_ || target == unchecked_entry_;
+    }
+    return false;
+  }
+
+  bool HasSingleEntryPoint() const {
+    return catch_entries().is_empty() && unchecked_entry() == nullptr;
+  }
+
   PRINT_TO_SUPPORT
 
  private:
@@ -1539,6 +1556,7 @@ class GraphEntryInstr : public BlockEntryInstr {
 
   const ParsedFunction& parsed_function_;
   TargetEntryInstr* normal_entry_;
+  TargetEntryInstr* unchecked_entry_ = nullptr;
   GrowableArray<CatchBlockEntryInstr*> catch_entries_;
   // Indirect targets are blocks reachable only through indirect gotos.
   GrowableArray<IndirectEntryInstr*> indirect_entries_;
@@ -3175,12 +3193,15 @@ class ClosureCallInstr : public TemplateDartCall<1> {
   ClosureCallInstr(Value* function,
                    ClosureCallNode* node,
                    PushArgumentsArray* arguments,
-                   intptr_t deopt_id)
+                   intptr_t deopt_id,
+                   Code::EntryKind entry_kind = Code::EntryKind::kNormal)
       : TemplateDartCall(deopt_id,
                          node->arguments()->type_args_len(),
                          node->arguments()->names(),
                          arguments,
-                         node->token_pos()) {
+                         node->token_pos()),
+        entry_kind_(entry_kind) {
+    ASSERT(entry_kind != Code::EntryKind::kMonomorphic);
     ASSERT(!arguments->is_empty());
     SetInputAt(0, function);
   }
@@ -3190,12 +3211,14 @@ class ClosureCallInstr : public TemplateDartCall<1> {
                    intptr_t type_args_len,
                    const Array& argument_names,
                    TokenPosition token_pos,
-                   intptr_t deopt_id)
+                   intptr_t deopt_id,
+                   Code::EntryKind entry_kind = Code::EntryKind::kNormal)
       : TemplateDartCall(deopt_id,
                          type_args_len,
                          argument_names,
                          arguments,
-                         token_pos) {
+                         token_pos),
+        entry_kind_(entry_kind) {
     ASSERT(!arguments->is_empty());
     SetInputAt(0, function);
   }
@@ -3209,9 +3232,13 @@ class ClosureCallInstr : public TemplateDartCall<1> {
 
   virtual bool HasUnknownSideEffects() const { return true; }
 
+  Code::EntryKind entry_kind() const { return entry_kind_; }
+
   PRINT_OPERANDS_TO_SUPPORT
 
  private:
+  const Code::EntryKind entry_kind_;
+
   DISALLOW_COPY_AND_ASSIGN(ClosureCallInstr);
 };
 
@@ -3342,6 +3369,10 @@ class InstanceCallInstr : public TemplateDartCall<0> {
 
   RawFunction* ResolveForReceiverClass(const Class& cls, bool allow_add = true);
 
+  Code::EntryKind entry_kind() const { return entry_kind_; }
+
+  void set_entry_kind(Code::EntryKind value) { entry_kind_ = value; }
+
  protected:
   friend class CallSpecializer;
   void set_ic_data(ICData* value) { ic_data_ = value; }
@@ -3354,6 +3385,7 @@ class InstanceCallInstr : public TemplateDartCall<0> {
   const Function& interface_target_;
   CompileType* result_type_;  // Inferred result type.
   bool has_unique_selector_;
+  Code::EntryKind entry_kind_ = Code::EntryKind::kNormal;
 
   DISALLOW_COPY_AND_ASSIGN(InstanceCallInstr);
 };
@@ -3842,6 +3874,10 @@ class StaticCallInstr : public TemplateDartCall<0> {
     is_known_list_constructor_ = value;
   }
 
+  Code::EntryKind entry_kind() const { return entry_kind_; }
+
+  void set_entry_kind(Code::EntryKind value) { entry_kind_ = value; }
+
   bool IsRecognizedFactory() const { return is_known_list_constructor(); }
 
   virtual AliasIdentity Identity() const { return identity_; }
@@ -3858,6 +3894,8 @@ class StaticCallInstr : public TemplateDartCall<0> {
 
   // 'True' for recognized list constructors.
   bool is_known_list_constructor_;
+
+  Code::EntryKind entry_kind_ = Code::EntryKind::kNormal;
 
   AliasIdentity identity_;
 
@@ -4196,6 +4234,13 @@ class StoreInstanceFieldInstr : public TemplateDefinition<2, NoThrow> {
   friend class JitCallSpecializer;  // For ASSERT(initialization_).
 
   Assembler::CanBeSmi CanValueBeSmi() const {
+    Isolate* isolate = Isolate::Current();
+    if (isolate->type_checks() && !isolate->strong()) {
+      // Dart 1 sometimes places a store into a context before a parameter
+      // type check.
+      return Assembler::kValueCanBeSmi;
+    }
+
     const intptr_t cid = value()->Type()->ToNullableCid();
     // Write barrier is skipped for nullable and non-nullable smis.
     ASSERT(cid != kSmiCid);
@@ -4273,6 +4318,29 @@ class GuardFieldLengthInstr : public GuardFieldInstr {
   DISALLOW_COPY_AND_ASSIGN(GuardFieldLengthInstr);
 };
 
+// For a field of static type G<T0, ..., Tn> and a stored value of runtime
+// type T checks that type arguments of T at G exactly match <T0, ..., Tn>
+// and updates guarded state (RawField::static_type_exactness_state_)
+// accordingly.
+//
+// See StaticTypeExactnessState for more information.
+class GuardFieldTypeInstr : public GuardFieldInstr {
+ public:
+  GuardFieldTypeInstr(Value* value, const Field& field, intptr_t deopt_id)
+      : GuardFieldInstr(value, field, deopt_id) {
+    CheckField(field);
+  }
+
+  DECLARE_INSTRUCTION(GuardFieldType)
+
+  virtual Instruction* Canonicalize(FlowGraph* flow_graph);
+
+  virtual bool AttributesEqual(Instruction* other) const;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(GuardFieldTypeInstr);
+};
+
 class LoadStaticFieldInstr : public TemplateDefinition<1, NoThrow> {
  public:
   LoadStaticFieldInstr(Value* field_value, TokenPosition token_pos)
@@ -4339,6 +4407,13 @@ class StoreStaticFieldInstr : public TemplateDefinition<1, NoThrow> {
 
  private:
   Assembler::CanBeSmi CanValueBeSmi() const {
+    Isolate* isolate = Isolate::Current();
+    if (isolate->type_checks() && !isolate->strong()) {
+      // Dart 1 sometimes places a store into a context before a parameter
+      // type check.
+      return Assembler::kValueCanBeSmi;
+    }
+
     const intptr_t cid = value()->Type()->ToNullableCid();
     // Write barrier is skipped for nullable and non-nullable smis.
     ASSERT(cid != kSmiCid);
@@ -5109,6 +5184,7 @@ class LoadFieldInstr : public TemplateDefinition<1, NoThrow> {
         native_field_(nullptr),
         field_(field),
         token_pos_(token_pos) {
+    ASSERT(Class::Handle(field->Owner()).is_finalized());
     ASSERT(field->IsZoneHandle());
     // May be null if field is not an instance.
     ASSERT(type.IsZoneHandle() || type.IsReadOnlyHandle());

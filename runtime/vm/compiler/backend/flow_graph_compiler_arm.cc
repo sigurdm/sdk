@@ -765,11 +765,11 @@ void FlowGraphCompiler::GenerateAssertAssignableViaTypeTestingStub(
   // on the call site to find out at which pool index the destination name is
   // located.
   const intptr_t sub_type_cache_index = __ object_pool_wrapper().AddObject(
-      Object::null_object(), Patchability::kPatchable);
+      Object::null_object(), ObjectPool::Patchability::kPatchable);
   const intptr_t sub_type_cache_offset =
       ObjectPool::element_offset(sub_type_cache_index) - kHeapObjectTag;
-  const intptr_t dst_name_index =
-      __ object_pool_wrapper().AddObject(dst_name, Patchability::kPatchable);
+  const intptr_t dst_name_index = __ object_pool_wrapper().AddObject(
+      dst_name, ObjectPool::Patchability::kPatchable);
   ASSERT((sub_type_cache_index + 1) == dst_name_index);
   ASSERT(__ constant_pool_allowed());
 
@@ -839,7 +839,8 @@ void FlowGraphCompiler::EmitFrameEntry() {
     }
     __ CompareImmediate(R3, GetOptimizationThreshold());
     ASSERT(function_reg == R8);
-    __ Branch(*StubCode::OptimizeFunction_entry(), kNotPatchable, new_pp, GE);
+    __ Branch(*StubCode::OptimizeFunction_entry(), ObjectPool::kNotPatchable,
+              new_pp, GE);
   }
   __ Comment("Enter frame");
   if (flow_graph().IsCompiledForOsr()) {
@@ -850,6 +851,35 @@ void FlowGraphCompiler::EmitFrameEntry() {
     ASSERT(StackSize() >= 0);
     __ EnterDartFrame(StackSize() * kWordSize);
   }
+}
+
+void FlowGraphCompiler::EmitPrologue() {
+  EmitFrameEntry();
+  ASSERT(assembler()->constant_pool_allowed());
+
+  // In unoptimized code, initialize (non-argument) stack allocated slots.
+  if (!is_optimizing()) {
+    const int num_locals = parsed_function().num_stack_locals();
+
+    intptr_t args_desc_slot = -1;
+    if (parsed_function().has_arg_desc_var()) {
+      args_desc_slot = compiler_frame_layout.FrameSlotForVariable(
+          parsed_function().arg_desc_var());
+    }
+
+    __ Comment("Initialize spill slots");
+    if (num_locals > 1 || (num_locals == 1 && args_desc_slot == -1)) {
+      __ LoadObject(R0, Object::null_object());
+    }
+    for (intptr_t i = 0; i < num_locals; ++i) {
+      const intptr_t slot_index =
+          compiler_frame_layout.FrameSlotForVariableIndex(-i);
+      Register value_reg = slot_index == args_desc_slot ? ARGS_DESC_REG : R0;
+      __ StoreToOffset(kWord, value_reg, FP, slot_index * kWordSize);
+    }
+  }
+
+  EndCodeSourceRange(TokenPosition::kDartCodePrologue);
 }
 
 // Input parameters:
@@ -869,35 +899,7 @@ void FlowGraphCompiler::CompileGraph() {
   }
 #endif  // DART_PRECOMPILER
 
-  if (TryIntrinsify()) {
-    // Skip regular code generation.
-    return;
-  }
-
-  EmitFrameEntry();
-  ASSERT(assembler()->constant_pool_allowed());
-
-  // In unoptimized code, initialize (non-argument) stack allocated slots.
-  if (!is_optimizing()) {
-    const int num_locals = parsed_function().num_stack_locals();
-
-    intptr_t args_desc_slot = -1;
-    if (parsed_function().has_arg_desc_var()) {
-      args_desc_slot = FrameSlotForVariable(parsed_function().arg_desc_var());
-    }
-
-    __ Comment("Initialize spill slots");
-    if (num_locals > 1 || (num_locals == 1 && args_desc_slot == -1)) {
-      __ LoadObject(R0, Object::null_object());
-    }
-    for (intptr_t i = 0; i < num_locals; ++i) {
-      const intptr_t slot_index = FrameSlotForVariableIndex(-i);
-      Register value_reg = slot_index == args_desc_slot ? ARGS_DESC_REG : R0;
-      __ StoreToOffset(kWord, value_reg, FP, slot_index * kWordSize);
-    }
-  }
-
-  EndCodeSourceRange(TokenPosition::kDartCodePrologue);
+  __ set_constant_pool_allowed(true);
   VisitBlocks();
 
   __ bkpt(0);
@@ -925,8 +927,9 @@ void FlowGraphCompiler::GenerateDartCall(intptr_t deopt_id,
                                          TokenPosition token_pos,
                                          const StubEntry& stub_entry,
                                          RawPcDescriptors::Kind kind,
-                                         LocationSummary* locs) {
-  __ BranchLinkPatchable(stub_entry);
+                                         LocationSummary* locs,
+                                         Code::EntryKind entry_kind) {
+  __ BranchLinkPatchable(stub_entry, entry_kind);
   EmitCallsiteMetadata(token_pos, deopt_id, kind, locs);
 }
 
@@ -935,12 +938,13 @@ void FlowGraphCompiler::GenerateStaticDartCall(intptr_t deopt_id,
                                                const StubEntry& stub_entry,
                                                RawPcDescriptors::Kind kind,
                                                LocationSummary* locs,
-                                               const Function& target) {
+                                               const Function& target,
+                                               Code::EntryKind entry_kind) {
   // Call sites to the same target can share object pool entries. These
   // call sites are never patched for breakpoints: the function is deoptimized
   // and the unoptimized code with IC calls for static calls is patched instead.
   ASSERT(is_optimizing());
-  __ BranchLinkWithEquivalence(stub_entry, target);
+  __ BranchLinkWithEquivalence(stub_entry, target, entry_kind);
   EmitCallsiteMetadata(token_pos, deopt_id, kind, locs);
   AddStaticCallTarget(target);
 }
@@ -980,7 +984,8 @@ void FlowGraphCompiler::EmitOptimizedInstanceCall(const StubEntry& stub_entry,
                                                   const ICData& ic_data,
                                                   intptr_t deopt_id,
                                                   TokenPosition token_pos,
-                                                  LocationSummary* locs) {
+                                                  LocationSummary* locs,
+                                                  Code::EntryKind entry_kind) {
   ASSERT(Array::Handle(zone(), ic_data.arguments_descriptor()).Length() > 0);
   // Each ICData propagated from unoptimized to optimized code contains the
   // function that corresponds to the Dart function of that IC call. Due
@@ -992,7 +997,7 @@ void FlowGraphCompiler::EmitOptimizedInstanceCall(const StubEntry& stub_entry,
   __ LoadObject(R8, parsed_function().function());
   __ LoadUniqueObject(R9, ic_data);
   GenerateDartCall(deopt_id, token_pos, stub_entry, RawPcDescriptors::kIcCall,
-                   locs);
+                   locs, entry_kind);
   __ Drop(ic_data.CountWithTypeArgs());
 }
 
@@ -1066,7 +1071,8 @@ void FlowGraphCompiler::EmitSwitchableInstanceCall(const ICData& ic_data,
   __ LoadFromOffset(kWord, R0, SP,
                     (ic_data.CountWithoutTypeArgs() - 1) * kWordSize);
   __ LoadUniqueObject(CODE_REG, initial_stub);
-  __ ldr(LR, FieldAddress(CODE_REG, Code::monomorphic_entry_point_offset()));
+  __ ldr(LR, FieldAddress(CODE_REG, Code::entry_point_offset(
+                                        Code::EntryKind::kMonomorphic)));
   __ LoadUniqueObject(R9, ic_data);
   __ blx(LR);
 
@@ -1094,7 +1100,8 @@ void FlowGraphCompiler::EmitOptimizedStaticCall(
     intptr_t count_with_type_args,
     intptr_t deopt_id,
     TokenPosition token_pos,
-    LocationSummary* locs) {
+    LocationSummary* locs,
+    Code::EntryKind entry_kind) {
   ASSERT(!function.IsClosureFunction());
   if (function.HasOptionalParameters() ||
       (isolate()->reify_generic_functions() && function.IsGeneric())) {
@@ -1106,7 +1113,7 @@ void FlowGraphCompiler::EmitOptimizedStaticCall(
   // we can record the outgoing edges to other code.
   GenerateStaticDartCall(deopt_id, token_pos,
                          *StubCode::CallStaticFunction_entry(),
-                         RawPcDescriptors::kOther, locs, function);
+                         RawPcDescriptors::kOther, locs, function, entry_kind);
   __ Drop(count_with_type_args);
 }
 

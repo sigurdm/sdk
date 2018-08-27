@@ -18,6 +18,7 @@ class ResolutionData {
   final DartType invokeType;
   final bool isExplicitCall;
   final bool isImplicitCall;
+  final bool isNamespaceCombinatorReference;
   final bool isOutline;
   final bool isPrefixReference;
   final bool isTypeReference;
@@ -36,6 +37,7 @@ class ResolutionData {
       this.invokeType,
       this.isExplicitCall = false,
       this.isImplicitCall = false,
+      this.isNamespaceCombinatorReference = false,
       this.isOutline = false,
       this.isPrefixReference = false,
       this.isTypeReference = false,
@@ -573,12 +575,14 @@ class ResolutionStorer
   void propertyAssign(
       ExpressionJudgment judgment,
       int location,
+      bool isSyntheticLhs,
       DartType receiverType,
       Node writeMember,
       DartType writeContext,
       Node combiner,
       DartType inferredType) {
     _store(location,
+        isSynthetic: isSyntheticLhs,
         isWriteReference: true,
         reference: writeMember,
         writeContext: writeContext,
@@ -791,11 +795,13 @@ class ResolutionStorer
   void variableAssign(
       ExpressionJudgment judgment,
       int location,
+      bool isSyntheticLhs,
       DartType writeContext,
       covariant VariableDeclarationBinder writeVariableBinder,
       Node combiner,
       DartType inferredType) {
     _store(location,
+        isSynthetic: isSyntheticLhs,
         declaration: writeVariableBinder?.fileOffset,
         isWriteReference: true,
         writeContext: writeContext,

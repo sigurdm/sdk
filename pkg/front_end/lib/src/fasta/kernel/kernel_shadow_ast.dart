@@ -222,7 +222,8 @@ class AsJudgment extends AsExpression implements ExpressionJudgment {
   @override
   Expression infer<Expression, Statement, Initializer, Type>(
       ShadowTypeInferrer inferrer, DartType typeContext) {
-    inferrer.inferExpression(judgment, const UnknownType(), false);
+    inferrer.inferExpression(judgment, const UnknownType(), false,
+        isVoidAllowed: true);
     inferredType = type;
     inferrer.listener
         .asExpression(this, fileOffset, null, tokens, null, inferredType);
@@ -301,7 +302,7 @@ class AwaitJudgment extends AwaitExpression implements ExpressionJudgment {
       typeContext = inferrer.wrapFutureOrType(typeContext);
     }
     var judgment = this.judgment;
-    inferrer.inferExpression(judgment, typeContext, true);
+    inferrer.inferExpression(judgment, typeContext, true, isVoidAllowed: true);
     inferredType =
         inferrer.typeSchemaEnvironment.unfutureType(judgment.inferredType);
     inferrer.listener
@@ -558,7 +559,8 @@ abstract class ComplexAssignmentJudgment extends SyntheticExpressionJudgment {
   /// pre-decrement.
   bool isPreIncDec = false;
 
-  ComplexAssignmentJudgment(this.rhs) : super(null);
+  ComplexAssignmentJudgment(this.rhs, {Expression desugared})
+      : super(desugared);
 
   String toString() {
     var parts = _getToStringParts();
@@ -589,6 +591,11 @@ abstract class ComplexAssignmentJudgment extends SyntheticExpressionJudgment {
           DartType readType,
           DartType writeContext) {
     assert(writeContext != null);
+    if (readType is VoidType &&
+        (combiner != null || nullAwareCombiner != null)) {
+      inferrer.helper
+          ?.addProblem(messageVoidExpression, read.fileOffset, noLength);
+    }
     var writeOffset = write == null ? -1 : write.fileOffset;
     Procedure combinerMember;
     DartType combinedType;
@@ -643,10 +650,12 @@ abstract class ComplexAssignmentJudgment extends SyntheticExpressionJudgment {
       }
       _storeLetType(inferrer, replacedCombiner, combinedType);
     } else {
-      inferrer.inferExpression(rhs, writeContext ?? const UnknownType(), true);
+      inferrer.inferExpression(rhs, writeContext ?? const UnknownType(), true,
+          isVoidAllowed: true);
       var rhsType = rhs.inferredType;
-      var replacedRhs =
-          inferrer.ensureAssignable(writeContext, rhsType, rhs, writeOffset);
+      var replacedRhs = inferrer.ensureAssignable(
+          writeContext, rhsType, rhs, writeOffset,
+          isVoidAllowed: writeContext is VoidType);
       _storeLetType(inferrer, replacedRhs ?? rhs, rhsType);
       if (nullAwareCombiner != null) {
         MethodInvocation equalsInvocation = nullAwareCombiner.condition;
@@ -657,7 +666,7 @@ abstract class ComplexAssignmentJudgment extends SyntheticExpressionJudgment {
         combinedType = readType == null
             ? rhsType
             : inferrer.typeSchemaEnvironment
-                .getLeastUpperBound(readType, rhsType);
+                .getStandardUpperBound(readType, rhsType);
         if (inferrer.strongMode) {
           nullAwareCombiner.staticType = combinedType;
         }
@@ -742,11 +751,13 @@ class ConditionalJudgment extends ConditionalExpression
         conditionJudgment, expectedType, !inferrer.isTopLevel);
     inferrer.ensureAssignable(expectedType, conditionJudgment.inferredType,
         condition, condition.fileOffset);
-    inferrer.inferExpression(thenJudgment, typeContext, true);
+    inferrer.inferExpression(thenJudgment, typeContext, true,
+        isVoidAllowed: true);
     bool useLub = _forceLub || typeContext == null;
-    inferrer.inferExpression(otherwiseJudgment, typeContext, useLub);
+    inferrer.inferExpression(otherwiseJudgment, typeContext, useLub,
+        isVoidAllowed: true);
     inferredType = useLub
-        ? inferrer.typeSchemaEnvironment.getLeastUpperBound(
+        ? inferrer.typeSchemaEnvironment.getStandardUpperBound(
             thenJudgment.inferredType, otherwiseJudgment.inferredType)
         : greatestClosure(inferrer.coreTypes, typeContext);
     if (inferrer.strongMode) {
@@ -861,7 +872,7 @@ class DeferredCheckJudgment extends Let implements ExpressionJudgment {
     // Since the variable is not used in the body we don't need to type infer
     // it.  We can just type infer the body.
     var judgment = this.judgment;
-    inferrer.inferExpression(judgment, typeContext, true);
+    inferrer.inferExpression(judgment, typeContext, true, isVoidAllowed: true);
     inferredType = judgment.inferredType;
     inferrer.listener.deferredCheck(this, fileOffset, inferredType);
     return null;
@@ -948,7 +959,8 @@ class ExpressionStatementJudgment extends ExpressionStatement
   @override
   void infer<Expression, Statement, Initializer, Type>(
       ShadowTypeInferrer inferrer) {
-    inferrer.inferExpression(judgment, const UnknownType(), false);
+    inferrer.inferExpression(judgment, const UnknownType(), false,
+        isVoidAllowed: true);
     inferrer.listener.expressionStatement(this, fileOffset, null, tokens);
   }
 }
@@ -1241,7 +1253,8 @@ class ForJudgment extends ForStatement implements StatementJudgment {
       for (var initializer in initializers) {
         variables
             .add(new VariableDeclaration.forValue(initializer)..parent = this);
-        inferrer.inferExpression(initializer, const UnknownType(), false);
+        inferrer.inferExpression(initializer, const UnknownType(), false,
+            isVoidAllowed: true);
       }
     } else {
       for (var variable in variableJudgments) {
@@ -1256,7 +1269,8 @@ class ForJudgment extends ForStatement implements StatementJudgment {
           condition, condition.fileOffset);
     }
     for (var update in updateJudgments) {
-      inferrer.inferExpression(update, const UnknownType(), false);
+      inferrer.inferExpression(update, const UnknownType(), false,
+          isVoidAllowed: true);
     }
     inferrer.inferStatement(bodyJudgment);
     inferrer.listener.forStatement(
@@ -1415,20 +1429,18 @@ class IfNullJudgment extends Let implements ExpressionJudgment {
     // - Infer e1 in context J to get T1
     bool useLub = _forceLub || typeContext is UnknownType;
     if (typeContext is UnknownType) {
-      inferrer.inferExpression(rightJudgment, lhsType, true);
+      inferrer.inferExpression(rightJudgment, lhsType, true,
+          isVoidAllowed: true);
     } else {
-      inferrer.inferExpression(rightJudgment, typeContext, _forceLub);
+      inferrer.inferExpression(rightJudgment, typeContext, _forceLub,
+          isVoidAllowed: true);
     }
     var rhsType = rightJudgment.inferredType;
-    if (rhsType is VoidType) {
-      inferrer.helper?.addProblem(
-          messageVoidExpression, rightJudgment.fileOffset, noLength);
-    }
     // - Let T = greatest closure of K with respect to `?` if K is not `_`, else
     //   UP(t0, t1)
     // - Then the inferred type is T.
     inferredType = useLub
-        ? inferrer.typeSchemaEnvironment.getLeastUpperBound(lhsType, rhsType)
+        ? inferrer.typeSchemaEnvironment.getStandardUpperBound(lhsType, rhsType)
         : greatestClosure(inferrer.coreTypes, typeContext);
     if (inferrer.strongMode) {
       body.staticType = inferredType;
@@ -1477,8 +1489,9 @@ class IllegalAssignmentJudgment extends ComplexAssignmentJudgment {
   /// If `-1`, then there is no separate location for invalid assignment.
   final int assignmentOffset;
 
-  IllegalAssignmentJudgment(ExpressionJudgment rhs, {this.assignmentOffset: -1})
-      : super(rhs) {
+  IllegalAssignmentJudgment(ExpressionJudgment rhs,
+      {this.assignmentOffset: -1, Expression desugared})
+      : super(rhs, desugared: desugared) {
     rhs.parent = this;
   }
 
@@ -1610,16 +1623,22 @@ abstract class InitializerJudgment implements Initializer {
 class IntJudgment extends IntLiteral implements ExpressionJudgment {
   IntLiteralTokens tokens;
   final kernel.Expression desugaredError;
+  final bool isSynthetic;
 
   DartType inferredType;
 
-  IntJudgment(this.tokens, int value, {this.desugaredError}) : super(value);
+  IntJudgment(this.tokens, int value,
+      {this.desugaredError, this.isSynthetic: false})
+      : super(value);
 
   @override
   Expression infer<Expression, Statement, Initializer, Type>(
       ShadowTypeInferrer inferrer, DartType typeContext) {
     inferredType = inferrer.coreTypes.intClass.rawType;
-    inferrer.listener.intLiteral(this, fileOffset, tokens, value, inferredType);
+    if (!isSynthetic) {
+      inferrer.listener
+          .intLiteral(this, fileOffset, tokens, value, inferredType);
+    }
     if (desugaredError != null) {
       parent.replaceChild(this, desugaredError);
       parent = null;
@@ -1782,8 +1801,9 @@ class ListLiteralJudgment extends ListLiteral implements ExpressionJudgment {
     if (inferenceNeeded || typeChecksNeeded) {
       for (int i = 0; i < judgments.length; ++i) {
         ExpressionJudgment judgment = judgments[i];
-        inferrer.inferExpression(judgment, inferredTypeArgument,
-            inferenceNeeded || typeChecksNeeded);
+        inferrer.inferExpression(
+            judgment, inferredTypeArgument, inferenceNeeded || typeChecksNeeded,
+            isVoidAllowed: true);
         if (inferenceNeeded) {
           formalTypes.add(listType.typeArguments[0]);
         }
@@ -1805,8 +1825,9 @@ class ListLiteralJudgment extends ListLiteral implements ExpressionJudgment {
     }
     if (typeChecksNeeded) {
       for (int i = 0; i < judgments.length; i++) {
-        inferrer.ensureAssignable(typeArgument, actualTypes[i], judgments[i],
-            judgments[i].fileOffset);
+        inferrer.ensureAssignable(
+            typeArgument, actualTypes[i], judgments[i], judgments[i].fileOffset,
+            isVoidAllowed: typeArgument is VoidType);
       }
     }
     var inferredType = new InterfaceType(listClass, [inferredTypeArgument]);
@@ -1867,11 +1888,13 @@ class MapEntryJudgment extends MapEntry {
       DartType keyTypeContext,
       DartType valueTypeContext) {
     ExpressionJudgment keyJudgment = this.keyJudgment;
-    inferrer.inferExpression(keyJudgment, keyTypeContext, true);
+    inferrer.inferExpression(keyJudgment, keyTypeContext, true,
+        isVoidAllowed: true);
     inferredKeyType = keyJudgment.inferredType;
 
     ExpressionJudgment valueJudgment = this.valueJudgment;
-    inferrer.inferExpression(valueJudgment, valueTypeContext, true);
+    inferrer.inferExpression(valueJudgment, valueTypeContext, true,
+        isVoidAllowed: true);
     inferredValueType = valueJudgment.inferredType;
 
     return null;
@@ -1962,11 +1985,13 @@ class MapLiteralJudgment extends MapLiteral implements ExpressionJudgment {
       for (int i = 0; i < judgments.length; ++i) {
         ExpressionJudgment keyJudgment = cachedKeyJudgments[i];
         inferrer.ensureAssignable(
-            keyType, actualTypes[2 * i], keyJudgment, keyJudgment.fileOffset);
+            keyType, actualTypes[2 * i], keyJudgment, keyJudgment.fileOffset,
+            isVoidAllowed: keyType is VoidType);
 
         ExpressionJudgment valueJudgment = cachedValueJudgments[i];
         inferrer.ensureAssignable(valueType, actualTypes[2 * i + 1],
-            valueJudgment, valueJudgment.fileOffset);
+            valueJudgment, valueJudgment.fileOffset,
+            isVoidAllowed: valueType is VoidType);
       }
     }
     inferredType =
@@ -2213,10 +2238,11 @@ class PropertyAssignmentJudgment extends ComplexAssignmentJudgmentWithReceiver {
   /// If this assignment uses null-aware access (`?.`), the conditional
   /// expression that guards the access; otherwise `null`.
   ConditionalExpression nullAwareGuard;
+  final bool isSyntheticLhs;
 
   PropertyAssignmentJudgment(
       ExpressionJudgment receiver, ExpressionJudgment rhs,
-      {bool isSuper: false})
+      {bool isSuper: false, this.isSyntheticLhs: false})
       : super(receiver, rhs, isSuper);
 
   @override
@@ -2266,6 +2292,7 @@ class PropertyAssignmentJudgment extends ComplexAssignmentJudgmentWithReceiver {
     inferrer.listener.propertyAssign(
         this,
         write.fileOffset,
+        isSyntheticLhs,
         receiverType,
         inferrer.getRealTarget(writeMember),
         writeContext,
@@ -2374,7 +2401,8 @@ class ReturnJudgment extends ReturnStatement implements StatementJudgment {
         : const UnknownType();
     DartType inferredType;
     if (expression != null) {
-      inferrer.inferExpression(judgment, typeContext, true);
+      inferrer.inferExpression(judgment, typeContext, true,
+          isVoidAllowed: true);
       inferredType = judgment.inferredType;
     } else {
       inferredType = const VoidType();
@@ -2758,7 +2786,7 @@ class InvalidVariableWriteJudgment extends SyntheticExpressionJudgment {
   @override
   Expression infer<Expression, Statement, Initializer, Type>(
       ShadowTypeInferrer inferrer, DartType typeContext) {
-    inferrer.listener.variableAssign(this, fileOffset, _variable.type,
+    inferrer.listener.variableAssign(this, fileOffset, false, _variable.type,
         _variable.createBinder(inferrer), null, _variable.type);
     return super.infer(inferrer, typeContext);
   }
@@ -3106,30 +3134,10 @@ class ShadowTypeInferrer extends TypeInferrerImpl {
       expression.infer(this, typeContext);
       DartType inferredType = expression.inferredType;
       if (inferredType is VoidType && !isVoidAllowed) {
-        TreeNode parent = expression.parent;
-        if (parent is ReturnStatement ||
-            parent is ExpressionStatement ||
-            parent is AsExpression) {
-          return inferredType;
-        } else if (parent is ForStatement &&
-            parent.updates.contains(expression)) {
-          return inferredType;
-        } else if (parent is VariableDeclaration) {
-          TreeNode grandParent = parent.parent;
-          if (grandParent is ForStatement &&
-              parent.name == null &&
-              grandParent.variables.contains(parent)) {
-            return inferredType;
-          }
-        } else if (parent is ConditionalExpression) {
-          if (parent.then == expression || parent.otherwise == expression) {
-            return inferredType;
-          }
-        } else if (parent is DeferredCheckJudgment) {
-          return inferredType;
+        if (expression.parent is! ArgumentsJudgment) {
+          helper?.addProblem(
+              messageVoidExpression, expression.fileOffset, noLength);
         }
-        helper?.addProblem(
-            messageVoidExpression, expression.fileOffset, noLength);
       }
       return inferredType;
     } else {
@@ -3298,6 +3306,7 @@ class VariableAssignmentJudgment extends ComplexAssignmentJudgment {
     inferrer.listener.variableAssign(
         this,
         write.fileOffset,
+        false,
         writeContext,
         write is VariableSet
             ? (write.variable as VariableDeclarationJudgment)
@@ -3403,7 +3412,8 @@ class VariableDeclarationJudgment extends VariableDeclaration
     DartType initializerType;
     if (initializerJudgment != null) {
       inferrer.inferExpression(initializerJudgment, declaredType,
-          !inferrer.isTopLevel || _implicitlyTyped);
+          !inferrer.isTopLevel || _implicitlyTyped,
+          isVoidAllowed: true);
       initializerType = initializerJudgment.inferredType;
       inferredType = inferrer.inferDeclarationType(initializerType);
     } else {
@@ -3416,7 +3426,8 @@ class VariableDeclarationJudgment extends VariableDeclaration
     }
     if (initializer != null) {
       var replacedInitializer = inferrer.ensureAssignable(
-          type, initializerType, initializer, fileOffset);
+          type, initializerType, initializer, fileOffset,
+          isVoidAllowed: type is VoidType);
       if (replacedInitializer != null) {
         initializer = replacedInitializer;
       }
@@ -3479,9 +3490,10 @@ class UnresolvedTargetInvocationJudgment extends SyntheticExpressionJudgment {
 class UnresolvedVariableAssignmentJudgment extends SyntheticExpressionJudgment {
   final bool isCompound;
   final ExpressionJudgment rhs;
+  final bool isSyntheticLhs;
 
-  UnresolvedVariableAssignmentJudgment(
-      kernel.Expression desugared, this.isCompound, this.rhs)
+  UnresolvedVariableAssignmentJudgment(kernel.Expression desugared,
+      this.isCompound, this.rhs, this.isSyntheticLhs)
       : super(desugared);
 
   @override
@@ -3489,8 +3501,8 @@ class UnresolvedVariableAssignmentJudgment extends SyntheticExpressionJudgment {
       ShadowTypeInferrer inferrer, DartType typeContext) {
     inferrer.inferExpression(rhs, const UnknownType(), true);
     inferredType = isCompound ? const DynamicType() : rhs.inferredType;
-    inferrer.listener.variableAssign(
-        this, fileOffset, const DynamicType(), null, null, inferredType);
+    inferrer.listener.variableAssign(this, fileOffset, isSyntheticLhs,
+        const DynamicType(), null, null, inferredType);
     return super.infer(inferrer, typeContext);
   }
 }
@@ -3511,7 +3523,7 @@ class UnresolvedVariableUnaryJudgment extends SyntheticExpressionJudgment {
     inferrer.listener.variableGet(
         this, offset, isSynthetic, false, null, const DynamicType());
     inferrer.listener.variableAssign(
-        this, fileOffset, const DynamicType(), null, null, inferredType);
+        this, fileOffset, false, const DynamicType(), null, null, inferredType);
     return super.infer(inferrer, typeContext);
   }
 }
@@ -3704,10 +3716,17 @@ class CheckLibraryIsLoadedJudgment extends CheckLibraryIsLoaded
 
 /// Concrete shadow object representing a named expression.
 class NamedExpressionJudgment extends NamedExpression {
-  NamedExpressionTokens tokens;
+  final NamedExpressionTokens tokens;
 
-  NamedExpressionJudgment(this.tokens, String nameLexeme, Expression value)
-      : super(nameLexeme, value);
+  /// The original value that is wrapped by this synthetic named argument.
+  /// Its type will be inferred.
+  final Expression originalValue;
+
+  NamedExpressionJudgment(this.tokens, String nameLexeme, Expression value,
+      {this.originalValue})
+      : super(nameLexeme, value) {
+    originalValue?.parent = this;
+  }
 
   ExpressionJudgment get judgment => value;
 }

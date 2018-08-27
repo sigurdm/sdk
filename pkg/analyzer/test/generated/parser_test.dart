@@ -10,14 +10,16 @@ import 'package:analyzer/error/error.dart';
 import 'package:analyzer/error/listener.dart';
 import 'package:analyzer/src/dart/ast/token.dart';
 import 'package:analyzer/src/dart/error/hint_codes.dart';
-import 'package:analyzer/src/dart/scanner/reader.dart';
-import 'package:analyzer/src/dart/scanner/scanner.dart';
 import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/parser.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/testing/token_factory.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
-import 'package:front_end/src/fasta/scanner/abstract_scanner.dart';
+import 'package:front_end/src/fasta/scanner.dart'
+    show ScannerResult, scanString;
+import 'package:front_end/src/fasta/scanner/abstract_scanner.dart'
+    show AbstractScanner;
+import 'package:front_end/src/scanner/errors.dart';
 import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
 
@@ -25,7 +27,10 @@ import 'test_support.dart';
 
 main() {
   // The fasta parser has a parallel set of tests in parser_fasta_test.dart
-  if (Parser.useFasta) return;
+  if (Parser.useFasta) {
+    test('useFasta', () => true);
+    return;
+  }
 
   defineReflectiveSuite(() {
     defineReflectiveTests(ClassMemberParserTest);
@@ -9967,17 +9972,32 @@ class ParserTestCase extends EngineTestCase
    * prepared to parse the tokens scanned from the given [content].
    */
   void createParser(String content, {int expectedEndOffset}) {
+    Source source = new TestSource();
     listener = new GatheringErrorListener();
+
+    void reportError(
+        ScannerErrorCode errorCode, int offset, List<Object> arguments) {
+      listener
+          .onError(new AnalysisError(source, offset, 1, errorCode, arguments));
+    }
+
     //
     // Scan the source.
     //
-    TestSource source = new TestSource();
-    CharacterReader reader = new CharSequenceReader(content);
-    Scanner scanner = new Scanner(source, reader, listener);
-    scanner.scanGenericMethodComments = enableGenericMethodComments;
-    scanner.scanLazyAssignmentOperators = enableLazyAssignmentOperators;
-    Token tokenStream = scanner.tokenize();
-    listener.setLineInfo(source, scanner.lineStarts);
+    ScannerResult result = scanString(content,
+        includeComments: true,
+        scanGenericMethodComments: enableGenericMethodComments,
+        scanLazyAssignmentOperators: enableLazyAssignmentOperators);
+    Token token = result.tokens;
+    if (result.hasErrors) {
+      // The default recovery strategy used by scanString
+      // places all error tokens at the head of the stream.
+      while (token.type == TokenType.BAD_INPUT) {
+        translateErrorToken(token, reportError);
+        token = token.next;
+      }
+    }
+    listener.setLineInfo(source, result.lineStarts);
     //
     // Create and initialize the parser.
     //
@@ -9987,7 +10007,7 @@ class ParserTestCase extends EngineTestCase
     parser.parseFunctionBodies = parseFunctionBodies;
     parser.enableNnbd = enableNnbd;
     parser.enableOptionalNewAndConst = enableOptionalNewAndConst;
-    parser.currentToken = tokenStream;
+    parser.currentToken = token;
   }
 
   @override
@@ -10103,15 +10123,36 @@ class ParserTestCase extends EngineTestCase
    * @throws Exception if the source could not be parsed, if the compilation errors in the source do
    *           not match those that are expected, or if the result would have been `null`
    */
-  CompilationUnit parseCompilationUnit(String source,
+  CompilationUnit parseCompilationUnit(String content,
       {List<ErrorCode> codes, List<ExpectedError> errors}) {
+    Source source = new TestSource();
     GatheringErrorListener listener = new GatheringErrorListener();
-    Scanner scanner =
-        new Scanner(null, new CharSequenceReader(source), listener);
-    TestSource testSource = new TestSource();
-    listener.setLineInfo(testSource, scanner.lineStarts);
-    Token token = scanner.tokenize();
-    Parser parser = new Parser(testSource, listener);
+
+    void reportError(
+        ScannerErrorCode errorCode, int offset, List<Object> arguments) {
+      listener
+          .onError(new AnalysisError(source, offset, 1, errorCode, arguments));
+    }
+
+    //
+    // Scan the source.
+    //
+    ScannerResult result = scanString(content,
+        includeComments: true,
+        scanGenericMethodComments: enableGenericMethodComments,
+        scanLazyAssignmentOperators: enableLazyAssignmentOperators);
+    Token token = result.tokens;
+    if (result.hasErrors) {
+      // The default recovery strategy used by scanString
+      // places all error tokens at the head of the stream.
+      while (token.type == TokenType.BAD_INPUT) {
+        translateErrorToken(token, reportError);
+        token = token.next;
+      }
+    }
+    listener.setLineInfo(source, result.lineStarts);
+
+    Parser parser = new Parser(source, listener);
     parser.enableOptionalNewAndConst = enableOptionalNewAndConst;
     CompilationUnit unit = parser.parseCompilationUnit(token);
     expect(unit, isNotNull);
@@ -10126,17 +10167,40 @@ class ParserTestCase extends EngineTestCase
   }
 
   /**
-   * Parse the given [code] as a compilation unit.
+   * Parse the given [content] as a compilation unit.
    */
-  CompilationUnit parseCompilationUnit2(String code,
+  CompilationUnit parseCompilationUnit2(String content,
       {AnalysisErrorListener listener}) {
+    Source source = NonExistingSource.unknown;
     listener ??= AnalysisErrorListener.NULL_LISTENER;
-    Scanner scanner = new Scanner(null, new CharSequenceReader(code), listener);
-    Token token = scanner.tokenize();
-    Parser parser = new Parser(NonExistingSource.unknown, listener);
+
+    void reportError(
+        ScannerErrorCode errorCode, int offset, List<Object> arguments) {
+      listener
+          .onError(new AnalysisError(source, offset, 1, errorCode, arguments));
+    }
+
+    //
+    // Scan the source.
+    //
+    ScannerResult result = scanString(content,
+        includeComments: true,
+        scanGenericMethodComments: enableGenericMethodComments,
+        scanLazyAssignmentOperators: enableLazyAssignmentOperators);
+    Token token = result.tokens;
+    if (result.hasErrors) {
+      // The default recovery strategy used by scanString
+      // places all error tokens at the head of the stream.
+      while (token.type == TokenType.BAD_INPUT) {
+        translateErrorToken(token, reportError);
+        token = token.next;
+      }
+    }
+
+    Parser parser = new Parser(source, listener);
     parser.enableOptionalNewAndConst = enableOptionalNewAndConst;
     CompilationUnit unit = parser.parseCompilationUnit(token);
-    unit.lineInfo = new LineInfo(scanner.lineStarts);
+    unit.lineInfo = new LineInfo(result.lineStarts);
     return unit;
   }
 
@@ -10453,22 +10517,42 @@ class ParserTestCase extends EngineTestCase
   }
 
   /**
-   * Parse the given [source] as a statement. If [enableLazyAssignmentOperators]
+   * Parse the given [content] as a statement. If [enableLazyAssignmentOperators]
    * is `true`, then lazy assignment operators should be enabled.
    */
-  Statement parseStatement(String source,
+  Statement parseStatement(String content,
       {bool enableLazyAssignmentOperators, int expectedEndOffset}) {
+    Source source = new TestSource();
     listener = new GatheringErrorListener();
-    Scanner scanner =
-        new Scanner(null, new CharSequenceReader(source), listener);
-    scanner.scanGenericMethodComments = enableGenericMethodComments;
     if (enableLazyAssignmentOperators != null) {
-      scanner.scanLazyAssignmentOperators = enableLazyAssignmentOperators;
+      this.enableLazyAssignmentOperators = enableLazyAssignmentOperators;
     }
-    var testSource = new TestSource();
-    listener.setLineInfo(testSource, scanner.lineStarts);
-    Token token = scanner.tokenize();
-    Parser parser = new Parser(testSource, listener);
+
+    void reportError(
+        ScannerErrorCode errorCode, int offset, List<Object> arguments) {
+      listener
+          .onError(new AnalysisError(source, offset, 1, errorCode, arguments));
+    }
+
+    //
+    // Scan the source.
+    //
+    ScannerResult result = scanString(content,
+        includeComments: true,
+        scanGenericMethodComments: enableGenericMethodComments,
+        scanLazyAssignmentOperators: enableLazyAssignmentOperators);
+    Token token = result.tokens;
+    if (result.hasErrors) {
+      // The default recovery strategy used by scanString
+      // places all error tokens at the head of the stream.
+      while (token.type == TokenType.BAD_INPUT) {
+        translateErrorToken(token, reportError);
+        token = token.next;
+      }
+    }
+    listener.setLineInfo(source, result.lineStarts);
+
+    Parser parser = new Parser(source, listener);
     parser.parseGenericMethodComments = enableGenericMethodComments;
     parser.enableOptionalNewAndConst = enableOptionalNewAndConst;
     Statement statement = parser.parseStatement(token);
@@ -10487,15 +10571,35 @@ class ParserTestCase extends EngineTestCase
    *           the expected count, if the compilation errors in the source do not match those that
    *           are expected, or if the result would have been `null`
    */
-  List<Statement> parseStatements(String source, int expectedCount,
+  List<Statement> parseStatements(String content, int expectedCount,
       [List<ErrorCode> errorCodes = const <ErrorCode>[]]) {
+    Source source = new TestSource();
     GatheringErrorListener listener = new GatheringErrorListener();
-    Scanner scanner =
-        new Scanner(null, new CharSequenceReader(source), listener);
-    var testSource = new TestSource();
-    listener.setLineInfo(testSource, scanner.lineStarts);
-    Token token = scanner.tokenize();
-    Parser parser = new Parser(testSource, listener);
+
+    void reportError(
+        ScannerErrorCode errorCode, int offset, List<Object> arguments) {
+      listener
+          .onError(new AnalysisError(source, offset, 1, errorCode, arguments));
+    }
+
+    //
+    // Scan the source.
+    //
+    ScannerResult result = scanString(content,
+        scanGenericMethodComments: enableGenericMethodComments,
+        scanLazyAssignmentOperators: enableLazyAssignmentOperators);
+    Token token = result.tokens;
+    if (result.hasErrors) {
+      // The default recovery strategy used by scanString
+      // places all error tokens at the head of the stream.
+      while (token.type == TokenType.BAD_INPUT) {
+        translateErrorToken(token, reportError);
+        token = token.next;
+      }
+    }
+    listener.setLineInfo(source, result.lineStarts);
+
+    Parser parser = new Parser(source, listener);
     parser.enableOptionalNewAndConst = enableOptionalNewAndConst;
     List<Statement> statements = parser.parseStatements(token);
     expect(statements, hasLength(expectedCount));
@@ -13451,16 +13555,6 @@ class C<@Foo.bar(const [], const [1], const{"":r""}, 0xFF + 2, .3, 4.5) T> {}
     expect(declaration.metadata, hasLength(2));
   }
 
-  void test_parseCommentAndMetadata_mm() {
-    createParser('@A @B(x) class C {}');
-    CompilationUnit unit = parser.parseCompilationUnit2();
-    expectNotNullIfNoErrors(unit);
-    assertNoErrors();
-    ClassDeclaration declaration = unit.declarations[0];
-    expect(declaration.documentationComment, isNull);
-    expect(declaration.metadata, hasLength(2));
-  }
-
   void test_parseCommentAndMetadata_mix1() {
     createParser(r'''
 /**
@@ -13558,6 +13652,16 @@ class E {}
     expect(tokens[0].lexeme, contains('aaa'));
   }
 
+  void test_parseCommentAndMetadata_mm() {
+    createParser('@A @B(x) class C {}');
+    CompilationUnit unit = parser.parseCompilationUnit2();
+    expectNotNullIfNoErrors(unit);
+    assertNoErrors();
+    ClassDeclaration declaration = unit.declarations[0];
+    expect(declaration.documentationComment, isNull);
+    expect(declaration.metadata, hasLength(2));
+  }
+
   void test_parseCommentAndMetadata_none() {
     createParser('class C {}');
     CompilationUnit unit = parser.parseCompilationUnit2();
@@ -13580,75 +13684,6 @@ class C {}
     ClassDeclaration declaration = unit.declarations[0];
     expect(declaration.documentationComment, isNotNull);
     expect(declaration.metadata, isEmpty);
-  }
-
-  void test_parseCommentReferences_33738() {
-    CompilationUnit unit =
-        parseCompilationUnit('/** [String] */ abstract class Foo {}');
-    ClassDeclaration clazz = unit.declarations[0];
-    Comment comment = clazz.documentationComment;
-    expect(clazz.isAbstract, isTrue);
-    List<CommentReference> references = comment.references;
-    expect(references, hasLength(1));
-    CommentReference reference = references[0];
-    expect(reference, isNotNull);
-    expect(reference.identifier, isNotNull);
-    expect(reference.offset, 5);
-  }
-
-  void test_parseCommentReferences_beforeAnnotation() {
-    CompilationUnit unit = parseCompilationUnit('''
-/// See [int] and [String]
-/// and [Object].
-@Annotation
-abstract class Foo {}
-''');
-    ClassDeclaration clazz = unit.declarations[0];
-    Comment comment = clazz.documentationComment;
-    expect(clazz.isAbstract, isTrue);
-    List<CommentReference> references = comment.references;
-    expect(references, hasLength(3));
-
-    expectReference(int index, String expectedText, int expectedOffset) {
-      CommentReference reference = references[index];
-      expect(reference.identifier.name, expectedText);
-      expect(reference.offset, expectedOffset);
-    }
-
-    expectReference(0, 'int', 9);
-    expectReference(1, 'String', 19);
-    expectReference(2, 'Object', 36);
-  }
-
-  void test_parseCommentReferences_complex() {
-    CompilationUnit unit = parseCompilationUnit('''
-/// This dartdoc comment [should] be ignored
-@Annotation
-/// This dartdoc comment is [included].
-// a non dartdoc comment [inbetween]
-/// See [int] and [String] but `not [a]`
-/// ```
-/// This [code] block should be ignored
-/// ```
-/// and [Object].
-abstract class Foo {}
-''');
-    ClassDeclaration clazz = unit.declarations[0];
-    Comment comment = clazz.documentationComment;
-    expect(clazz.isAbstract, isTrue);
-    List<CommentReference> references = comment.references;
-    expect(references, hasLength(4));
-
-    expectReference(int index, String expectedText, int expectedOffset) {
-      CommentReference reference = references[index];
-      expect(reference.identifier.name, expectedText);
-      expect(reference.offset, expectedOffset);
-    }
-
-    expectReference(0, 'included', 86);
-    expectReference(1, 'int', 143);
-    expectReference(2, 'String', 153);
-    expectReference(3, 'Object', 240);
   }
 
   void test_parseCommentReference_new_prefixed() {
@@ -13804,6 +13839,75 @@ abstract class Foo {}
     expect(identifier.token, isNotNull);
     expect(identifier.name, "a");
     expect(identifier.offset, 5);
+  }
+
+  void test_parseCommentReferences_33738() {
+    CompilationUnit unit =
+        parseCompilationUnit('/** [String] */ abstract class Foo {}');
+    ClassDeclaration clazz = unit.declarations[0];
+    Comment comment = clazz.documentationComment;
+    expect(clazz.isAbstract, isTrue);
+    List<CommentReference> references = comment.references;
+    expect(references, hasLength(1));
+    CommentReference reference = references[0];
+    expect(reference, isNotNull);
+    expect(reference.identifier, isNotNull);
+    expect(reference.offset, 5);
+  }
+
+  void test_parseCommentReferences_beforeAnnotation() {
+    CompilationUnit unit = parseCompilationUnit('''
+/// See [int] and [String]
+/// and [Object].
+@Annotation
+abstract class Foo {}
+''');
+    ClassDeclaration clazz = unit.declarations[0];
+    Comment comment = clazz.documentationComment;
+    expect(clazz.isAbstract, isTrue);
+    List<CommentReference> references = comment.references;
+    expect(references, hasLength(3));
+
+    expectReference(int index, String expectedText, int expectedOffset) {
+      CommentReference reference = references[index];
+      expect(reference.identifier.name, expectedText);
+      expect(reference.offset, expectedOffset);
+    }
+
+    expectReference(0, 'int', 9);
+    expectReference(1, 'String', 19);
+    expectReference(2, 'Object', 36);
+  }
+
+  void test_parseCommentReferences_complex() {
+    CompilationUnit unit = parseCompilationUnit('''
+/// This dartdoc comment [should] be ignored
+@Annotation
+/// This dartdoc comment is [included].
+// a non dartdoc comment [inbetween]
+/// See [int] and [String] but `not [a]`
+/// ```
+/// This [code] block should be ignored
+/// ```
+/// and [Object].
+abstract class Foo {}
+''');
+    ClassDeclaration clazz = unit.declarations[0];
+    Comment comment = clazz.documentationComment;
+    expect(clazz.isAbstract, isTrue);
+    List<CommentReference> references = comment.references;
+    expect(references, hasLength(4));
+
+    expectReference(int index, String expectedText, int expectedOffset) {
+      CommentReference reference = references[index];
+      expect(reference.identifier.name, expectedText);
+      expect(reference.offset, expectedOffset);
+    }
+
+    expectReference(0, 'included', 86);
+    expectReference(1, 'int', 143);
+    expectReference(2, 'String', 153);
+    expectReference(3, 'Object', 240);
   }
 
   void test_parseCommentReferences_multiLine() {
@@ -14032,10 +14136,17 @@ abstract class Foo {}
     expect(reference.offset, 27);
   }
 
-  void test_parseCommentReferences_skipLinkDefinition() {
+  void test_parseCommentReferences_skipLink_direct_multiLine() {
     List<DocumentationCommentToken> tokens = <DocumentationCommentToken>[
-      new DocumentationCommentToken(TokenType.MULTI_LINE_COMMENT,
-          "/** [a]: http://www.google.com (Google) [b] zzz */", 3)
+      new DocumentationCommentToken(
+          TokenType.MULTI_LINE_COMMENT,
+          '''
+/**
+ * [a link split across multiple
+ * lines](http://www.google.com) [b] zzz
+ */
+''',
+          3)
     ];
     createParser('');
     List<CommentReference> references = parser.parseCommentReferences(tokens);
@@ -14045,10 +14156,10 @@ abstract class Foo {}
     CommentReference reference = references[0];
     expect(reference, isNotNull);
     expect(reference.identifier, isNotNull);
-    expect(reference.offset, 44);
+    expect(reference.offset, 74);
   }
 
-  void test_parseCommentReferences_skipLinked() {
+  void test_parseCommentReferences_skipLink_direct_singleLine() {
     List<DocumentationCommentToken> tokens = <DocumentationCommentToken>[
       new DocumentationCommentToken(TokenType.MULTI_LINE_COMMENT,
           "/** [a](http://www.google.com) [b] zzz */", 3)
@@ -14064,7 +14175,30 @@ abstract class Foo {}
     expect(reference.offset, 35);
   }
 
-  void test_parseCommentReferences_skipReferenceLink() {
+  void test_parseCommentReferences_skipLink_reference_multiLine() {
+    List<DocumentationCommentToken> tokens = <DocumentationCommentToken>[
+      new DocumentationCommentToken(
+          TokenType.MULTI_LINE_COMMENT,
+          '''
+/**
+ * [a link split across multiple
+ * lines][c] [b] zzz
+ */
+''',
+          3)
+    ];
+    createParser('');
+    List<CommentReference> references = parser.parseCommentReferences(tokens);
+    expectNotNullIfNoErrors(references);
+    assertNoErrors();
+    expect(references, hasLength(1));
+    CommentReference reference = references[0];
+    expect(reference, isNotNull);
+    expect(reference.identifier, isNotNull);
+    expect(reference.offset, 54);
+  }
+
+  void test_parseCommentReferences_skipLink_reference_singleLine() {
     List<DocumentationCommentToken> tokens = <DocumentationCommentToken>[
       new DocumentationCommentToken(
           TokenType.MULTI_LINE_COMMENT, "/** [a][c] [b] zzz */", 3)
@@ -14078,6 +14212,22 @@ abstract class Foo {}
     expect(reference, isNotNull);
     expect(reference.identifier, isNotNull);
     expect(reference.offset, 15);
+  }
+
+  void test_parseCommentReferences_skipLinkDefinition() {
+    List<DocumentationCommentToken> tokens = <DocumentationCommentToken>[
+      new DocumentationCommentToken(TokenType.MULTI_LINE_COMMENT,
+          "/** [a]: http://www.google.com (Google) [b] zzz */", 3)
+    ];
+    createParser('');
+    List<CommentReference> references = parser.parseCommentReferences(tokens);
+    expectNotNullIfNoErrors(references);
+    assertNoErrors();
+    expect(references, hasLength(1));
+    CommentReference reference = references[0];
+    expect(reference, isNotNull);
+    expect(reference.identifier, isNotNull);
+    expect(reference.offset, 44);
   }
 
   void test_parseConfiguration_noOperator_dottedIdentifier() {
@@ -17996,24 +18146,6 @@ enum E {
     expect(alias.semicolon, isNotNull);
   }
 
-  void test_parseGenericTypeAlias_typeParameters_extends_gtGtEq() {
-    // The scanner creates a single token for `>>=`
-    // then the parser must split it into three separate tokens.
-    createParser('typedef F<A,B,C extends D<E>>=Function(A a, B b, C c);');
-    GenericTypeAlias alias = parseFullCompilationUnitMember();
-    expect(alias, isNotNull);
-    assertNoErrors();
-    expect(alias.name, isNotNull);
-    expect(alias.name.name, 'F');
-    expect(alias.typeParameters.typeParameters, hasLength(3));
-    TypeParameter typeParam = alias.typeParameters.typeParameters[2];
-    NamedType type = typeParam.bound;
-    expect(type.typeArguments.arguments, hasLength(1));
-    expect(alias.equals, isNotNull);
-    expect(alias.functionType, isNotNull);
-    expect(alias.semicolon, isNotNull);
-  }
-
   void test_parseGenericTypeAlias_typeParameters_extends3() {
     createParser(
         'typedef F<A,B,C extends D<E,G,H>> = Function(A a, B b, C c);');
@@ -18044,6 +18176,24 @@ enum E {
     TypeParameter typeParam = alias.typeParameters.typeParameters[2];
     NamedType type = typeParam.bound;
     expect(type.typeArguments.arguments, hasLength(3));
+    expect(alias.equals, isNotNull);
+    expect(alias.functionType, isNotNull);
+    expect(alias.semicolon, isNotNull);
+  }
+
+  void test_parseGenericTypeAlias_typeParameters_extends_gtGtEq() {
+    // The scanner creates a single token for `>>=`
+    // then the parser must split it into three separate tokens.
+    createParser('typedef F<A,B,C extends D<E>>=Function(A a, B b, C c);');
+    GenericTypeAlias alias = parseFullCompilationUnitMember();
+    expect(alias, isNotNull);
+    assertNoErrors();
+    expect(alias.name, isNotNull);
+    expect(alias.name.name, 'F');
+    expect(alias.typeParameters.typeParameters, hasLength(3));
+    TypeParameter typeParam = alias.typeParameters.typeParameters[2];
+    NamedType type = typeParam.bound;
+    expect(type.typeArguments.arguments, hasLength(1));
     expect(alias.equals, isNotNull);
     expect(alias.functionType, isNotNull);
     expect(alias.semicolon, isNotNull);

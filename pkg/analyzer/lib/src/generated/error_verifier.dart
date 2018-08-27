@@ -397,7 +397,6 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
       _errorReporter.reportErrorForToken(
           CompileTimeErrorCode.AWAIT_IN_WRONG_CONTEXT, node.awaitKeyword);
     }
-    _checkForUseOfVoidResult(node.expression);
     return super.visitAwaitExpression(node);
   }
 
@@ -3898,8 +3897,10 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
    * assigned variable in a for-in statement.
    */
   void _checkForInIterable(ForEachStatement node) {
+    DeclaredIdentifier loopVariable = node.loopVariable;
+
     // Ignore malformed for statements.
-    if (node.identifier == null && node.loopVariable == null) {
+    if (node.identifier == null && loopVariable == null) {
       return;
     }
 
@@ -3913,7 +3914,7 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
     }
 
     // The type of the loop variable.
-    SimpleIdentifier variable = node.identifier ?? node.loopVariable.identifier;
+    SimpleIdentifier variable = node.identifier ?? loopVariable.identifier;
     DartType variableType = getStaticType(variable);
 
     // TODO(mfairhurst) Check and guard against `for(void x in _)`?
@@ -3938,6 +3939,19 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
     if (bestIterableType == null) {
       if (_typeSystem.isSubtypeOf(loopType, iterableType)) {
         bestIterableType = DynamicTypeImpl.instance;
+      }
+    }
+
+    if (loopVariable != null) {
+      if (loopVariable.isConst) {
+        _errorReporter.reportErrorForNode(
+            CompileTimeErrorCode.FOR_IN_WITH_CONST_VARIABLE, loopVariable);
+      }
+    } else if (node.identifier != null) {
+      Element variableElement = node.identifier.staticElement;
+      if (variableElement is VariableElement && variableElement.isConst) {
+        _errorReporter.reportErrorForNode(
+            CompileTimeErrorCode.FOR_IN_WITH_CONST_VARIABLE, node.identifier);
       }
     }
 
@@ -5269,7 +5283,8 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
       if (toType.isDynamic || toType.isDartCoreNull || toType.isBottom) {
         return;
       }
-    } else {
+    }
+    if (!expectedType.isVoid && !fromType.isVoid) {
       var checkWithType = (!_inAsync)
           ? fromType
           : _typeProvider.futureType.instantiate(<DartType>[fromType]);

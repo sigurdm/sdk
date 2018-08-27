@@ -345,12 +345,13 @@ RawInstructions* TypeTestingStubGenerator::BuildCodeForType(const Type& type) {
   ASSERT(!type_class.IsNull());
 
   // To use the already-defined __ Macro !
-  Assembler assembler;
+  ObjectPoolWrapper object_pool_wrapper;
+  Assembler assembler(&object_pool_wrapper);
   BuildOptimizedTypeTestStub(&assembler, hi, type, type_class);
 
   const char* name = namer_.StubNameForType(type);
-  const Code& code =
-      Code::Handle(Code::FinalizeCode(name, &assembler, false /* optimized */));
+  const Code& code = Code::Handle(
+      Code::FinalizeCode(name, nullptr, &assembler, false /* optimized */));
 #ifndef PRODUCT
   if (FLAG_support_disassembler && FLAG_disassemble_stubs) {
     LogBlock lb;

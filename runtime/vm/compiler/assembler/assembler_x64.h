@@ -277,7 +277,8 @@ class FieldAddress : public Address {
 
 class Assembler : public ValueObject {
  public:
-  explicit Assembler(bool use_far_branches = false);
+  explicit Assembler(ObjectPoolWrapper* object_pool_wrapper,
+                     bool use_far_branches = false);
 
   ~Assembler() {}
 
@@ -523,6 +524,7 @@ class Assembler : public ValueObject {
 
   void testl(Register reg, const Immediate& imm) { testq(reg, imm); }
   void testb(const Address& address, const Immediate& imm);
+  void testb(const Address& address, Register reg);
 
   void testq(Register reg, const Immediate& imm);
   void TestImmediate(Register dst, const Immediate& imm);
@@ -685,14 +687,15 @@ class Assembler : public ValueObject {
   void LoadUniqueObject(Register dst, const Object& obj);
   void LoadNativeEntry(Register dst,
                        const ExternalLabel* label,
-                       Patchability patchable);
+                       ObjectPool::Patchability patchable);
   void LoadFunctionFromCalleePool(Register dst,
                                   const Function& function,
                                   Register new_pp);
   void JmpPatchable(const StubEntry& stub_entry, Register pp);
   void Jmp(const StubEntry& stub_entry, Register pp = PP);
   void J(Condition condition, const StubEntry& stub_entry, Register pp);
-  void CallPatchable(const StubEntry& stub_entry);
+  void CallPatchable(const StubEntry& stub_entry,
+                     Code::EntryKind entry_kind = Code::EntryKind::kNormal);
   void Call(const StubEntry& stub_entry);
   void CallToRuntime();
 
@@ -700,8 +703,11 @@ class Assembler : public ValueObject {
 
   // Emit a call that shares its object pool entries with other calls
   // that have the same equivalence marker.
-  void CallWithEquivalence(const StubEntry& stub_entry,
-                           const Object& equivalence);
+  void CallWithEquivalence(
+      const StubEntry& stub_entry,
+      const Object& equivalence,
+      Code::EntryKind entry_kind = Code::EntryKind::kNormal);
+
   // Unaware of write barrier (use StoreInto* methods for storing to objects).
   // TODO(koda): Add StackAddress/HeapAddress types to prevent misuse.
   void StoreObject(const Address& dst, const Object& obj);
@@ -832,10 +838,10 @@ class Assembler : public ValueObject {
     return buffer_.pointer_offsets();
   }
 
-  ObjectPoolWrapper& object_pool_wrapper() { return object_pool_wrapper_; }
+  ObjectPoolWrapper& object_pool_wrapper() { return *object_pool_wrapper_; }
 
   RawObjectPool* MakeObjectPool() {
-    return object_pool_wrapper_.MakeObjectPool();
+    return object_pool_wrapper_->MakeObjectPool();
   }
 
   void FinalizeInstructions(const MemoryRegion& region) {
@@ -957,7 +963,7 @@ class Assembler : public ValueObject {
  private:
   AssemblerBuffer buffer_;
 
-  ObjectPoolWrapper object_pool_wrapper_;
+  ObjectPoolWrapper* object_pool_wrapper_;
 
   intptr_t prologue_offset_;
   bool has_single_entry_point_;

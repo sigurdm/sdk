@@ -2618,10 +2618,12 @@ static RawFunction* CreateFunction(const char* name) {
 // Test for Code and Instruction object creation.
 ISOLATE_UNIT_TEST_CASE(Code) {
   extern void GenerateIncrement(Assembler * assembler);
-  Assembler _assembler_;
+  ObjectPoolWrapper object_pool_wrapper;
+  Assembler _assembler_(&object_pool_wrapper);
   GenerateIncrement(&_assembler_);
   const Function& function = Function::Handle(CreateFunction("Test_Code"));
-  Code& code = Code::Handle(Code::FinalizeCode(function, &_assembler_));
+  Code& code =
+      Code::Handle(Code::FinalizeCode(function, nullptr, &_assembler_));
   function.AttachCode(code);
   const Instructions& instructions = Instructions::Handle(code.instructions());
   uword payload_start = instructions.PayloadStart();
@@ -2638,10 +2640,12 @@ ISOLATE_UNIT_TEST_CASE(CodeImmutability) {
       MallocHooks::stack_trace_collection_enabled();
   MallocHooks::set_stack_trace_collection_enabled(false);
   extern void GenerateIncrement(Assembler * assembler);
-  Assembler _assembler_;
+  ObjectPoolWrapper object_pool_wrapper;
+  Assembler _assembler_(&object_pool_wrapper);
   GenerateIncrement(&_assembler_);
   const Function& function = Function::Handle(CreateFunction("Test_Code"));
-  Code& code = Code::Handle(Code::FinalizeCode(function, &_assembler_));
+  Code& code =
+      Code::Handle(Code::FinalizeCode(function, nullptr, &_assembler_));
   function.AttachCode(code);
   Instructions& instructions = Instructions::Handle(code.instructions());
   uword payload_start = instructions.PayloadStart();
@@ -2663,11 +2667,13 @@ ISOLATE_UNIT_TEST_CASE(EmbedStringInCode) {
   extern void GenerateEmbedStringInCode(Assembler * assembler, const char* str);
   const char* kHello = "Hello World!";
   word expected_length = static_cast<word>(strlen(kHello));
-  Assembler _assembler_;
+  ObjectPoolWrapper object_pool_wrapper;
+  Assembler _assembler_(&object_pool_wrapper);
   GenerateEmbedStringInCode(&_assembler_, kHello);
   const Function& function =
       Function::Handle(CreateFunction("Test_EmbedStringInCode"));
-  const Code& code = Code::Handle(Code::FinalizeCode(function, &_assembler_));
+  const Code& code =
+      Code::Handle(Code::FinalizeCode(function, nullptr, &_assembler_));
   function.AttachCode(code);
   const Object& result =
       Object::Handle(DartEntry::InvokeFunction(function, Array::empty_array()));
@@ -2684,11 +2690,13 @@ ISOLATE_UNIT_TEST_CASE(EmbedStringInCode) {
 ISOLATE_UNIT_TEST_CASE(EmbedSmiInCode) {
   extern void GenerateEmbedSmiInCode(Assembler * assembler, intptr_t value);
   const intptr_t kSmiTestValue = 5;
-  Assembler _assembler_;
+  ObjectPoolWrapper object_pool_wrapper;
+  Assembler _assembler_(&object_pool_wrapper);
   GenerateEmbedSmiInCode(&_assembler_, kSmiTestValue);
   const Function& function =
       Function::Handle(CreateFunction("Test_EmbedSmiInCode"));
-  const Code& code = Code::Handle(Code::FinalizeCode(function, &_assembler_));
+  const Code& code =
+      Code::Handle(Code::FinalizeCode(function, nullptr, &_assembler_));
   function.AttachCode(code);
   const Object& result =
       Object::Handle(DartEntry::InvokeFunction(function, Array::empty_array()));
@@ -2700,11 +2708,13 @@ ISOLATE_UNIT_TEST_CASE(EmbedSmiInCode) {
 ISOLATE_UNIT_TEST_CASE(EmbedSmiIn64BitCode) {
   extern void GenerateEmbedSmiInCode(Assembler * assembler, intptr_t value);
   const intptr_t kSmiTestValue = DART_INT64_C(5) << 32;
-  Assembler _assembler_;
+  ObjectPoolWrapper object_pool_wrapper;
+  Assembler _assembler_(&object_pool_wrapper);
   GenerateEmbedSmiInCode(&_assembler_, kSmiTestValue);
   const Function& function =
       Function::Handle(CreateFunction("Test_EmbedSmiIn64BitCode"));
-  const Code& code = Code::Handle(Code::FinalizeCode(function, &_assembler_));
+  const Code& code =
+      Code::Handle(Code::FinalizeCode(function, nullptr, &_assembler_));
   function.AttachCode(code);
   const Object& result =
       Object::Handle(DartEntry::InvokeFunction(function, Array::empty_array()));
@@ -2729,10 +2739,11 @@ ISOLATE_UNIT_TEST_CASE(ExceptionHandlers) {
                                     TokenPosition::kNoSource, true);
 
   extern void GenerateIncrement(Assembler * assembler);
-  Assembler _assembler_;
+  ObjectPoolWrapper object_pool_wrapper;
+  Assembler _assembler_(&object_pool_wrapper);
   GenerateIncrement(&_assembler_);
   Code& code = Code::Handle(Code::FinalizeCode(
-      Function::Handle(CreateFunction("Test_Code")), &_assembler_));
+      Function::Handle(CreateFunction("Test_Code")), nullptr, &_assembler_));
   code.set_exception_handlers(exception_handlers);
 
   // Verify the exception handler table entries by accessing them.
@@ -2769,10 +2780,11 @@ ISOLATE_UNIT_TEST_CASE(PcDescriptors) {
   descriptors ^= builder->FinalizePcDescriptors(0);
 
   extern void GenerateIncrement(Assembler * assembler);
-  Assembler _assembler_;
+  ObjectPoolWrapper object_pool_wrapper;
+  Assembler _assembler_(&object_pool_wrapper);
   GenerateIncrement(&_assembler_);
   Code& code = Code::Handle(Code::FinalizeCode(
-      Function::Handle(CreateFunction("Test_Code")), &_assembler_));
+      Function::Handle(CreateFunction("Test_Code")), nullptr, &_assembler_));
   code.set_pc_descriptors(descriptors);
 
   // Verify the PcDescriptor entries by accessing them.
@@ -2830,10 +2842,11 @@ ISOLATE_UNIT_TEST_CASE(PcDescriptorsLargeDeltas) {
   descriptors ^= builder->FinalizePcDescriptors(0);
 
   extern void GenerateIncrement(Assembler * assembler);
-  Assembler _assembler_;
+  ObjectPoolWrapper object_pool_wrapper;
+  Assembler _assembler_(&object_pool_wrapper);
   GenerateIncrement(&_assembler_);
   Code& code = Code::Handle(Code::FinalizeCode(
-      Function::Handle(CreateFunction("Test_Code")), &_assembler_));
+      Function::Handle(CreateFunction("Test_Code")), nullptr, &_assembler_));
   code.set_pc_descriptors(descriptors);
 
   // Verify the PcDescriptor entries by accessing them.

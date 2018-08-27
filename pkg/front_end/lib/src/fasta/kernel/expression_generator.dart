@@ -68,6 +68,7 @@ import 'kernel_ast_api.dart'
         DartType,
         DynamicType,
         Expression,
+        IllegalAssignmentJudgment,
         Initializer,
         InvalidConstructorInvocationJudgment,
         InvalidType,
@@ -119,7 +120,8 @@ abstract class ExpressionGenerator {
   ///
   /// The returned expression evaluates to the assigned value, unless
   /// [voidContext] is true, in which case it may evaluate to anything.
-  Expression buildAssignment(Expression value, {bool voidContext});
+  Expression buildAssignment(Expression value,
+      {bool voidContext, int offset: -1});
 
   /// Returns a [Expression] representing a null-aware assignment (`??=`) with
   /// the generator on the LHS and [value] on the RHS.
@@ -779,7 +781,8 @@ abstract class ErroneousExpressionGenerator implements Generator {
   }
 
   @override
-  Expression buildAssignment(Expression value, {bool voidContext: false}) {
+  Expression buildAssignment(Expression value,
+      {bool voidContext: false, int offset: -1}) {
     return new SyntheticExpressionJudgment(buildError(
         forest.arguments(<Expression>[value], token, token),
         isSetter: true));
@@ -937,15 +940,16 @@ abstract class ContextAwareGenerator implements Generator {
   }
 
   @override
-  Expression buildAssignment(Expression value, {bool voidContext: false}) {
-    return makeInvalidWrite(value);
+  Expression buildAssignment(Expression value,
+      {bool voidContext: false, int offset: -1}) {
+    return buildInvalidAssignment(value, offset);
   }
 
   @override
   Expression buildNullAwareAssignment(
       Expression value, DartType type, int offset,
       {bool voidContext: false}) {
-    return makeInvalidWrite(value);
+    return buildInvalidAssignment(value, offset);
   }
 
   @override
@@ -953,20 +957,36 @@ abstract class ContextAwareGenerator implements Generator {
       {int offset: -1,
       bool voidContext: false,
       Procedure interfaceTarget,
-      bool isPreIncDec: false}) {
-    return makeInvalidWrite(value);
+      bool isPreIncDec: false,
+      bool isPostIncDec: false}) {
+    return buildInvalidAssignment(value, offset);
   }
 
   @override
   Expression buildPrefixIncrement(Name binaryOperator,
       {int offset: -1, bool voidContext: false, Procedure interfaceTarget}) {
-    return makeInvalidWrite(null);
+    return buildInvalidAssignment(
+        forest.literalInt(1, null, isSynthetic: true), offset);
   }
 
   @override
   Expression buildPostfixIncrement(Name binaryOperator,
       {int offset: -1, bool voidContext: false, Procedure interfaceTarget}) {
-    return makeInvalidWrite(null);
+    return buildInvalidAssignment(
+        forest.literalInt(1, null, isSynthetic: true), offset);
+  }
+
+  Expression buildInvalidAssignment(Expression value, int offset) {
+    var lhs = buildSimpleRead();
+    // The lhs expression needs to have a parent so that type inference can be
+    // applied to it, but it doesn't matter what the parent is because the
+    // lhs expression won't appear in the tree.  So just give it a quick and
+    // dirty parent.
+    new VariableDeclaration.forValue(lhs);
+
+    return new IllegalAssignmentJudgment(value,
+        assignmentOffset: offset, desugared: makeInvalidWrite(value))
+      ..write = lhs;
   }
 
   @override
@@ -1007,13 +1027,26 @@ abstract class DelayedAssignment implements ContextAwareGenerator {
   }
 
   Expression handleAssignment(bool voidContext) {
+    var assignment = makeAssignmentExpression(voidContext);
     if (helper.constantContext != ConstantContext.none) {
+      // The assignment needs to have a parent so that type inference can be
+      // applied to it, but it doesn't matter what the parent is because the
+      // assignment won't appear in the tree.  So just give it a quick and dirty
+      // parent.
+      new VariableDeclaration.forValue(assignment);
+
       return helper.buildCompileTimeErrorExpression(
           messageNotAConstantExpression, offsetForToken(token),
-          length: token.length);
+          length: token.length, original: assignment);
+    } else {
+      return assignment;
     }
+  }
+
+  Expression makeAssignmentExpression(bool voidContext) {
     if (identical("=", assignmentOperator)) {
-      return generator.buildAssignment(value, voidContext: voidContext);
+      return generator.buildAssignment(value,
+          voidContext: voidContext, offset: token.offset);
     } else if (identical("+=", assignmentOperator)) {
       return generator.buildCompoundAssignment(plusName, value,
           offset: offsetForToken(token), voidContext: voidContext);

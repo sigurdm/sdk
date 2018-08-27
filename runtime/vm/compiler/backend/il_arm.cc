@@ -128,7 +128,8 @@ void ReturnInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   Label stack_ok;
   __ Comment("Stack Check");
   const intptr_t fp_sp_dist =
-      (kFirstLocalSlotFromFp + 1 - compiler->StackSize()) * kWordSize;
+      (compiler_frame_layout.first_local_from_fp + 1 - compiler->StackSize()) *
+      kWordSize;
   ASSERT(fp_sp_dist <= 0);
   __ sub(R2, SP, Operand(FP));
   __ CompareImmediate(R2, fp_sp_dist);
@@ -264,25 +265,14 @@ void ClosureCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   // R0: Function.
   ASSERT(locs()->in(0).reg() == R0);
   __ ldr(CODE_REG, FieldAddress(R0, Function::code_offset()));
-  __ ldr(R2, FieldAddress(R0, Function::entry_point_offset()));
+  __ ldr(R2, FieldAddress(R0, Code::function_entry_point_offset(entry_kind())));
 
   // R2: instructions entry point.
   // R9: Smi 0 (no IC data; the lazy-compile stub expects a GC-safe value).
   __ LoadImmediate(R9, 0);
   __ blx(R2);
-  compiler->RecordSafepoint(locs());
-  compiler->EmitCatchEntryState();
-  // Marks either the continuation point in unoptimized code or the
-  // deoptimization point in optimized code, after call.
-  const intptr_t deopt_id_after = Thread::ToDeoptAfter(deopt_id());
-  if (compiler->is_optimizing()) {
-    compiler->AddDeoptIndexAtCall(deopt_id_after);
-  }
-  // Add deoptimization continuation point after the call and before the
-  // arguments are removed.
-  // In optimized code this descriptor is needed for exception handling.
-  compiler->AddCurrentDescriptor(RawPcDescriptors::kDeopt, deopt_id_after,
-                                 token_pos());
+  compiler->EmitCallsiteMetadata(token_pos(), deopt_id(),
+                                 RawPcDescriptors::kOther, locs());
   __ Drop(argument_count);
 }
 
@@ -294,7 +284,9 @@ LocationSummary* LoadLocalInstr::MakeLocationSummary(Zone* zone,
 
 void LoadLocalInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   const Register result = locs()->out(0).reg();
-  __ LoadFromOffset(kWord, result, FP, FrameOffsetInBytesForVariable(&local()));
+  __ LoadFromOffset(
+      kWord, result, FP,
+      compiler_frame_layout.FrameOffsetInBytesForVariable(&local()));
 }
 
 LocationSummary* StoreLocalInstr::MakeLocationSummary(Zone* zone,
@@ -307,7 +299,9 @@ void StoreLocalInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   const Register value = locs()->in(0).reg();
   const Register result = locs()->out(0).reg();
   ASSERT(result == value);  // Assert that register assignment is correct.
-  __ StoreToOffset(kWord, value, FP, FrameOffsetInBytesForVariable(&local()));
+  __ StoreToOffset(
+      kWord, value, FP,
+      compiler_frame_layout.FrameOffsetInBytesForVariable(&local()));
 }
 
 LocationSummary* ConstantInstr::MakeLocationSummary(Zone* zone,
@@ -987,7 +981,9 @@ void NativeCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   }
   __ LoadImmediate(R1, argc_tag);
   ExternalLabel label(entry);
-  __ LoadNativeEntry(R9, &label, link_lazily() ? kPatchable : kNotPatchable);
+  __ LoadNativeEntry(
+      R9, &label,
+      link_lazily() ? ObjectPool::kPatchable : ObjectPool::kNotPatchable);
   if (link_lazily()) {
     compiler->GeneratePatchableCall(token_pos(), *stub_entry,
                                     RawPcDescriptors::kOther, locs());
@@ -2013,6 +2009,16 @@ void GuardFieldLengthInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   }
 }
 
+LocationSummary* GuardFieldTypeInstr::MakeLocationSummary(Zone* zone,
+                                                          bool opt) const {
+  UNREACHABLE();
+  return nullptr;
+}
+
+void GuardFieldTypeInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
+  UNREACHABLE();
+}
+
 class BoxAllocationSlowPath : public TemplateSlowPathCode<Instruction> {
  public:
   BoxAllocationSlowPath(Instruction* instruction,
@@ -2980,18 +2986,21 @@ void CatchBlockEntryInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   // Restore SP from FP as we are coming from a throw and the code for
   // popping arguments has not been run.
   const intptr_t fp_sp_dist =
-      (kFirstLocalSlotFromFp + 1 - compiler->StackSize()) * kWordSize;
+      (compiler_frame_layout.first_local_from_fp + 1 - compiler->StackSize()) *
+      kWordSize;
   ASSERT(fp_sp_dist <= 0);
   __ AddImmediate(SP, FP, fp_sp_dist);
 
   if (!compiler->is_optimizing()) {
     if (raw_exception_var_ != nullptr) {
       __ StoreToOffset(kWord, kExceptionObjectReg, FP,
-                       FrameOffsetInBytesForVariable(raw_exception_var_));
+                       compiler_frame_layout.FrameOffsetInBytesForVariable(
+                           raw_exception_var_));
     }
     if (raw_stacktrace_var_ != nullptr) {
       __ StoreToOffset(kWord, kStackTraceObjectReg, FP,
-                       FrameOffsetInBytesForVariable(raw_stacktrace_var_));
+                       compiler_frame_layout.FrameOffsetInBytesForVariable(
+                           raw_stacktrace_var_));
     }
   }
 }

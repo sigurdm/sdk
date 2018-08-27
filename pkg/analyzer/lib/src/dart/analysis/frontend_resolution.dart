@@ -245,9 +245,13 @@ class FrontEndCompiler {
           }
         });
 
-        // TODO(scheglov) Only for new libraries?
-        _component.computeCanonicalNames();
-        _component.accept(new _ShadowCleaner());
+        _ShadowCleaner cleaner = new _ShadowCleaner();
+        for (var library in _component.libraries) {
+          if (!_results.containsKey(library.importUri)) {
+            _component.computeCanonicalNamesForLibrary(library);
+            library.accept(cleaner);
+          }
+        }
 
         _logger.run('Compute dependencies', _computeDependencies);
 
@@ -420,6 +424,11 @@ class _AnalyzerKernelTarget extends KernelTarget {
   }
 
   @override
+  Declaration getAbstractClassInstantiationError(loader) {
+    return loader.coreLibrary.getConstructor('Exception');
+  }
+
+  @override
   Declaration getDuplicatedFieldInitializerError(loader) {
     return loader.coreLibrary.getConstructor('Exception');
   }
@@ -434,12 +443,16 @@ class _AnalyzerOutlineListener implements OutlineListener {
 
   @override
   void store(int offset, bool isSynthetic,
-      {int importIndex, Node reference, DartType type}) {
+      {int importIndex,
+      bool isNamespaceCombinatorReference = false,
+      Node reference,
+      DartType type}) {
 //    if (fileUri.toString().endsWith('test.dart')) {
 //      print('[store][offset: $offset][reference: $reference][type: $type]');
 //    }
     var encodedLocation = 2 * offset + (isSynthetic ? 1 : 0);
     resolution.kernelData[encodedLocation] = new ResolutionData(
+        isNamespaceCombinatorReference: isNamespaceCombinatorReference,
         isOutline: true,
         prefixInfo: importIndex,
         reference: reference,

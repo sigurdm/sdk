@@ -118,7 +118,8 @@ void ReturnInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   __ Comment("Stack Check");
   Label done;
   const intptr_t fp_sp_dist =
-      (kFirstLocalSlotFromFp + 1 - compiler->StackSize()) * kWordSize;
+      (compiler_frame_layout.first_local_from_fp + 1 - compiler->StackSize()) *
+      kWordSize;
   ASSERT(fp_sp_dist <= 0);
   __ movq(RDI, RSP);
   __ subq(RDI, RBP);
@@ -236,7 +237,8 @@ void IfThenElseInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
 LocationSummary* LoadLocalInstr::MakeLocationSummary(Zone* zone,
                                                      bool opt) const {
   const intptr_t kNumInputs = 0;
-  const intptr_t stack_index = FrameSlotForVariable(&local());
+  const intptr_t stack_index =
+      compiler_frame_layout.FrameSlotForVariable(&local());
   return LocationSummary::Make(zone, kNumInputs,
                                Location::StackSlot(stack_index),
                                LocationSummary::kNoCall);
@@ -258,7 +260,9 @@ void StoreLocalInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   Register value = locs()->in(0).reg();
   Register result = locs()->out(0).reg();
   ASSERT(result == value);  // Assert that register assignment is correct.
-  __ movq(Address(RBP, FrameOffsetInBytesForVariable(&local())), value);
+  __ movq(Address(RBP, compiler_frame_layout.FrameOffsetInBytesForVariable(
+                           &local())),
+          value);
 }
 
 LocationSummary* ConstantInstr::MakeLocationSummary(Zone* zone,
@@ -860,7 +864,7 @@ void NativeCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   if (link_lazily()) {
     stub_entry = StubCode::CallBootstrapNative_entry();
     ExternalLabel label(NativeEntry::LinkNativeCallEntry());
-    __ LoadNativeEntry(RBX, &label, kPatchable);
+    __ LoadNativeEntry(RBX, &label, ObjectPool::kPatchable);
     compiler->GeneratePatchableCall(token_pos(), *stub_entry,
                                     RawPcDescriptors::kOther, locs());
   } else {
@@ -872,7 +876,7 @@ void NativeCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
       stub_entry = StubCode::CallNoScopeNative_entry();
     }
     const ExternalLabel label(reinterpret_cast<uword>(native_c_function()));
-    __ LoadNativeEntry(RBX, &label, kNotPatchable);
+    __ LoadNativeEntry(RBX, &label, ObjectPool::kNotPatchable);
     compiler->GenerateCall(token_pos(), *stub_entry, RawPcDescriptors::kOther,
                            locs());
   }
@@ -1646,10 +1650,14 @@ void GuardFieldClassInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
     __ j(EQUAL, &ok);
 
     // Check if the tracked state of the guarded field can be initialized
-    // inline. If the field needs length check we fall through to runtime
-    // which is responsible for computing offset of the length field
-    // based on the class id.
-    if (!field().needs_length_check()) {
+    // inline. If the field needs length check or requires type arguments and
+    // class hierarchy processing for exactness tracking then we fall through
+    // into runtime which is responsible for computing offset of the length
+    // field based on the class id.
+    const bool is_complicated_field =
+        field().needs_length_check() ||
+        field().static_type_exactness_state().IsUninitialized();
+    if (!is_complicated_field) {
       // Uninitialized field can be handled inline. Check if the
       // field is still unitialized.
       __ cmpw(field_cid_operand, Immediate(kIllegalCid));
@@ -1803,6 +1811,88 @@ void GuardFieldLengthInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
         Immediate(Smi::RawValue(field().guarded_list_length())));
     __ j(NOT_EQUAL, deopt);
   }
+}
+
+LocationSummary* GuardFieldTypeInstr::MakeLocationSummary(Zone* zone,
+                                                          bool opt) const {
+  const intptr_t kNumInputs = 1;
+  const intptr_t kNumTemps = 1;
+  LocationSummary* summary = new (zone)
+      LocationSummary(zone, kNumInputs, kNumTemps, LocationSummary::kNoCall);
+  summary->set_in(0, Location::RequiresRegister());
+  summary->set_temp(0, Location::RequiresRegister());
+  return summary;
+}
+
+void GuardFieldTypeInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
+  // Should never emit GuardFieldType for fields that are marked as NotTracking.
+  ASSERT(field().static_type_exactness_state().IsTracking());
+  if (!field().static_type_exactness_state().NeedsFieldGuard()) {
+    // Nothing to do: we only need to perform checks for trivially invariant
+    // fields. If optimizing Canonicalize pass should have removed
+    // this instruction.
+    if (Compiler::IsBackgroundCompilation()) {
+      Compiler::AbortBackgroundCompilation(
+          deopt_id(),
+          "GuardFieldTypeInstr: field state changed during compilation");
+    }
+    ASSERT(!compiler->is_optimizing());
+    return;
+  }
+
+  Label* deopt =
+      compiler->is_optimizing()
+          ? compiler->AddDeoptStub(deopt_id(), ICData::kDeoptGuardField)
+          : NULL;
+
+  Label ok;
+
+  const Register value_reg = locs()->in(0).reg();
+  const Register temp = locs()->temp(0).reg();
+
+  // Skip null values for nullable fields.
+  if (!compiler->is_optimizing() || field().is_nullable()) {
+    __ CompareObject(value_reg, Object::Handle());
+    __ j(EQUAL, &ok);
+  }
+
+  // Get the state.
+  __ LoadObject(temp, Field::ZoneHandle(compiler->zone(), field().Original()));
+  __ movsxb(temp,
+            FieldAddress(temp, Field::static_type_exactness_state_offset()));
+
+  if (!compiler->is_optimizing()) {
+    // Check if field requires checking (it is in unitialized or trivially
+    // exact state).
+    __ cmpq(temp, Immediate(StaticTypeExactnessState::kUninitialized));
+    __ j(LESS, &ok);
+  }
+
+  Label call_runtime;
+  if (field().static_type_exactness_state().IsUninitialized()) {
+    // Can't initialize the field state inline in optimized code.
+    __ cmpq(temp, Immediate(StaticTypeExactnessState::kUninitialized));
+    __ j(EQUAL, compiler->is_optimizing() ? deopt : &call_runtime);
+  }
+
+  // At this point temp is known to be type arguments offset in words.
+  __ movq(temp, FieldAddress(value_reg, temp, TIMES_8, 0));
+  __ CompareObject(temp, TypeArguments::ZoneHandle(
+                             compiler->zone(),
+                             AbstractType::Handle(field().type()).arguments()));
+  if (deopt != nullptr) {
+    __ j(NOT_EQUAL, deopt);
+  } else {
+    __ j(EQUAL, &ok);
+
+    __ Bind(&call_runtime);
+    __ PushObject(field());
+    __ pushq(value_reg);
+    __ CallRuntime(kUpdateFieldCidRuntimeEntry, 2);
+    __ Drop(2);
+  }
+
+  __ Bind(&ok);
 }
 
 LocationSummary* StoreInstanceFieldInstr::MakeLocationSummary(Zone* zone,
@@ -2588,17 +2678,20 @@ void CatchBlockEntryInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   // Restore RSP from RBP as we are coming from a throw and the code for
   // popping arguments has not been run.
   const intptr_t fp_sp_dist =
-      (kFirstLocalSlotFromFp + 1 - compiler->StackSize()) * kWordSize;
+      (compiler_frame_layout.first_local_from_fp + 1 - compiler->StackSize()) *
+      kWordSize;
   ASSERT(fp_sp_dist <= 0);
   __ leaq(RSP, Address(RBP, fp_sp_dist));
 
   if (!compiler->is_optimizing()) {
     if (raw_exception_var_ != nullptr) {
-      __ movq(Address(RBP, FrameOffsetInBytesForVariable(raw_exception_var_)),
+      __ movq(Address(RBP, compiler_frame_layout.FrameOffsetInBytesForVariable(
+                               raw_exception_var_)),
               kExceptionObjectReg);
     }
     if (raw_stacktrace_var_ != nullptr) {
-      __ movq(Address(RBP, FrameOffsetInBytesForVariable(raw_stacktrace_var_)),
+      __ movq(Address(RBP, compiler_frame_layout.FrameOffsetInBytesForVariable(
+                               raw_stacktrace_var_)),
               kStackTraceObjectReg);
     }
   }
@@ -6063,7 +6156,7 @@ void IndirectGotoInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
     ASSERT(__ CodeSize() == entry_to_rip_offset);
   }
 
-  // Load from [current frame pointer] + kPcMarkerSlotFromFp.
+  // Load from [current frame pointer] + compiler_frame_layout.code_from_fp.
 
   // Calculate the final absolute address.
   if (offset()->definition()->representation() == kTagged) {
@@ -6145,26 +6238,16 @@ void ClosureCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   // Function in RAX.
   ASSERT(locs()->in(0).reg() == RAX);
   __ movq(CODE_REG, FieldAddress(RAX, Function::code_offset()));
-  __ movq(RCX, FieldAddress(RAX, Function::entry_point_offset()));
+  __ movq(RCX,
+          FieldAddress(RAX, Code::function_entry_point_offset(entry_kind())));
 
   // RAX: Function.
   // R10: Arguments descriptor array.
   // RBX: Smi 0 (no IC data; the lazy-compile stub expects a GC-safe value).
   __ xorq(RBX, RBX);
   __ call(RCX);
-  compiler->RecordSafepoint(locs());
-  compiler->EmitCatchEntryState();
-  // Marks either the continuation point in unoptimized code or the
-  // deoptimization point in optimized code, after call.
-  const intptr_t deopt_id_after = Thread::ToDeoptAfter(deopt_id());
-  if (compiler->is_optimizing()) {
-    compiler->AddDeoptIndexAtCall(deopt_id_after);
-  }
-  // Add deoptimization continuation point after the call and before the
-  // arguments are removed.
-  // In optimized code this descriptor is needed for exception handling.
-  compiler->AddCurrentDescriptor(RawPcDescriptors::kDeopt, deopt_id_after,
-                                 token_pos());
+  compiler->EmitCallsiteMetadata(token_pos(), deopt_id(),
+                                 RawPcDescriptors::kOther, locs());
   __ Drop(argument_count);
 }
 

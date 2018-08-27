@@ -49,10 +49,10 @@ ConflictsWithSetterWarning/example: Fail
 ConflictsWithTypeVariable/example: Fail
 ConstAfterFactory/script1: Fail
 ConstAndCovariant/script2: Fail
-ConstAndFinal/script1: Fail
 ConstAndVar/script1: Fail
 ConstConstructorInSubclassOfMixinApplication/example: Fail
 ConstConstructorNonFinalField/example: Fail
+ConstConstructorRedirectionToNonConst/analyzerCode: Fail # The analyzer doesn't report this error.
 ConstConstructorWithNonConstSuper/example: Fail
 ConstEvalContext/analyzerCode: Fail # This is just used for displaying the context.
 ConstEvalContext/example: Fail # This is just used for displaying the context.
@@ -123,8 +123,8 @@ ExpectedBlock/script: Fail
 ExpectedBlockToSkip/script: Fail
 ExpectedButGot/script1: Fail
 ExpectedButGot/script2: Fail
-ExpectedClassBody/example: Fail
 ExpectedClassMember/example: Fail
+ExpectedClassOrMixinBody/example: Fail
 ExpectedDeclaration/example: Fail
 ExpectedFunctionBody/example: Fail
 ExpectedNamedArgument/example: Fail
@@ -195,6 +195,7 @@ IllegalMixinDueToConstructors/example: Fail
 IllegalSyncGeneratorVoidReturnType/analyzerCode: Fail # The analyzer doesn't report this error.
 ImplementsBeforeExtends/script: Fail
 ImplementsBeforeWith/script: Fail
+ImplementsFutureOr/analyzerCode: Fail # The analyzer doesn't report this error.
 ImplicitCallOfNonMethod/example: Fail
 ImportAfterPart/script1: Fail
 InitializerForStaticField/example: Fail
@@ -324,7 +325,6 @@ SourceOutlineSummary/example: Fail
 StackOverflow/example: Fail
 StaticAfterConst/script1: Fail
 SuperAsExpression/example: Fail
-SuperAsIdentifier/analyzerCode: Fail
 SuperAsIdentifier/example: Fail
 SuperNullAware/example: Fail
 SuperclassHasNoDefaultConstructor/example: Fail

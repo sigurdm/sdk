@@ -50,7 +50,8 @@ class FlowGraphBuilder : public BaseFlowGraphBuilder {
                    InlineExitCollector* exit_collector,
                    bool optimizing,
                    intptr_t osr_id,
-                   intptr_t first_block_id = 1);
+                   intptr_t first_block_id = 1,
+                   bool inlining_unchecked_entry = false);
   virtual ~FlowGraphBuilder();
 
   FlowGraph* BuildGraph();
@@ -100,9 +101,11 @@ class FlowGraphBuilder : public BaseFlowGraphBuilder {
                         intptr_t checked_argument_count,
                         const Function& interface_target,
                         const InferredTypeMetadata* result_type = NULL);
-  Fragment ClosureCall(intptr_t type_args_len,
+  Fragment ClosureCall(TokenPosition position,
+                       intptr_t type_args_len,
                        intptr_t argument_count,
-                       const Array& argument_names);
+                       const Array& argument_names,
+                       bool use_unchecked_entry = false);
   Fragment RethrowException(TokenPosition position, int catch_try_index);
   Fragment LoadClassId();
   Fragment LoadField(intptr_t offset, intptr_t class_id = kDynamicCid);
@@ -110,10 +113,11 @@ class FlowGraphBuilder : public BaseFlowGraphBuilder {
   Fragment LoadLocal(LocalVariable* variable);
   Fragment InitStaticField(const Field& field);
   Fragment NativeCall(const String* name, const Function* function);
-  Fragment Return(TokenPosition position);
+  Fragment Return(TokenPosition position, bool omit_result_type_check = false);
   Fragment CheckNull(TokenPosition position,
                      LocalVariable* receiver,
-                     const String& function_name);
+                     const String& function_name,
+                     bool clear_the_temp = true);
   void SetResultTypeForStaticCall(StaticCallInstr* call,
                                   const Function& target,
                                   intptr_t argument_count,

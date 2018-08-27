@@ -338,8 +338,10 @@ class FieldAddress : public Address {
 
 class Assembler : public ValueObject {
  public:
-  explicit Assembler(bool use_far_branches = false)
+  explicit Assembler(ObjectPoolWrapper* object_pool_wrapper,
+                     bool use_far_branches = false)
       : buffer_(),
+        object_pool_wrapper_(object_pool_wrapper),
         prologue_offset_(-1),
         has_single_entry_point_(true),
         use_far_branches_(use_far_branches),
@@ -375,10 +377,10 @@ class Assembler : public ValueObject {
     return buffer_.pointer_offsets();
   }
 
-  ObjectPoolWrapper& object_pool_wrapper() { return object_pool_wrapper_; }
+  ObjectPoolWrapper& object_pool_wrapper() { return *object_pool_wrapper_; }
 
   RawObjectPool* MakeObjectPool() {
-    return object_pool_wrapper_.MakeObjectPool();
+    return object_pool_wrapper_->MakeObjectPool();
   }
 
   bool use_far_branches() const {
@@ -690,25 +692,35 @@ class Assembler : public ValueObject {
   void blx(Register rm, Condition cond = AL);
 
   void Branch(const StubEntry& stub_entry,
-              Patchability patchable = kNotPatchable,
+              ObjectPool::Patchability patchable = ObjectPool::kNotPatchable,
               Register pp = PP,
               Condition cond = AL);
 
-  void BranchLink(const StubEntry& stub_entry,
-                  Patchability patchable = kNotPatchable);
-  void BranchLink(const Code& code, Patchability patchable);
+  void BranchLink(
+      const StubEntry& stub_entry,
+      ObjectPool::Patchability patchable = ObjectPool::kNotPatchable);
+  void BranchLink(const Code& code,
+                  ObjectPool::Patchability patchable,
+                  Code::EntryKind entry_kind = Code::EntryKind::kNormal);
   void BranchLinkToRuntime();
 
   void CallNullErrorShared(bool save_fpu_registers);
 
   // Branch and link to an entry address. Call sequence can be patched.
-  void BranchLinkPatchable(const StubEntry& stub_entry);
-  void BranchLinkPatchable(const Code& code);
+  void BranchLinkPatchable(
+      const StubEntry& stub_entry,
+      Code::EntryKind entry_kind = Code::EntryKind::kNormal);
+
+  void BranchLinkPatchable(
+      const Code& code,
+      Code::EntryKind entry_kind = Code::EntryKind::kNormal);
 
   // Emit a call that shares its object pool entries with other calls
   // that have the same equivalence marker.
-  void BranchLinkWithEquivalence(const StubEntry& stub_entry,
-                                 const Object& equivalence);
+  void BranchLinkWithEquivalence(
+      const StubEntry& stub_entry,
+      const Object& equivalence,
+      Code::EntryKind entry_kind = Code::EntryKind::kNormal);
 
   // Branch and link to [base + offset]. Call sequence is never patched.
   void BranchLinkOffset(Register base, int32_t offset);
@@ -784,7 +796,7 @@ class Assembler : public ValueObject {
                                   Register new_pp);
   void LoadNativeEntry(Register dst,
                        const ExternalLabel* label,
-                       Patchability patchable,
+                       ObjectPool::Patchability patchable,
                        Condition cond = AL);
   void PushObject(const Object& object);
   void CompareObject(Register rn, const Object& object);
@@ -1110,9 +1122,25 @@ class Assembler : public ValueObject {
   bool constant_pool_allowed() const { return constant_pool_allowed_; }
   void set_constant_pool_allowed(bool b) { constant_pool_allowed_ = b; }
 
+  // Whether we can branch to a target which is [distance] bytes away from the
+  // beginning of the branch instruction.
+  //
+  // Use this function for testing whether [distance] can be encoded using the
+  // 24-bit offets in the branch instructions, which are multiples of 4.
+  static bool CanEncodeBranchDistance(int32_t distance) {
+    ASSERT(Utils::IsAligned(distance, 4));
+    // The distance is off by 8 due to the way the ARM CPUs read PC.
+    distance -= Instr::kPCReadOffset;
+    distance >>= 2;
+    return Utils::IsInt(24, distance);
+  }
+
+  static int32_t EncodeBranchOffset(int32_t offset, int32_t inst);
+  static int32_t DecodeBranchOffset(int32_t inst);
+
  private:
   AssemblerBuffer buffer_;  // Contains position independent code.
-  ObjectPoolWrapper object_pool_wrapper_;
+  ObjectPoolWrapper* object_pool_wrapper_;
   int32_t prologue_offset_;
   bool has_single_entry_point_;
   bool use_far_branches_;
@@ -1244,8 +1272,7 @@ class Assembler : public ValueObject {
 
   void EmitFarBranch(Condition cond, int32_t offset, bool link);
   void EmitBranch(Condition cond, Label* label, bool link);
-  int32_t EncodeBranchOffset(int32_t offset, int32_t inst);
-  static int32_t DecodeBranchOffset(int32_t inst);
+  void BailoutIfInvalidBranchOffset(int32_t offset);
   int32_t EncodeTstOffset(int32_t offset, int32_t inst);
   int32_t DecodeTstOffset(int32_t inst);
 

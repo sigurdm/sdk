@@ -188,6 +188,7 @@ class IncrementalCompiler implements IncrementalKernelGenerator {
       for (Uri uri in new Set<Uri>.from(dillLoadedData.loader.builders.keys)
         ..removeAll(reusedLibraryUris)) {
         dillLoadedData.loader.builders.remove(uri);
+        dillLoadedDataUriToSource.remove(uri);
         userBuilders?.remove(uri);
       }
 
@@ -335,6 +336,9 @@ class IncrementalCompiler implements IncrementalKernelGenerator {
       if (builder != null) {
         Library lib = builder.target;
         removedLibraries.add(lib);
+        dillLoadedData.loader.builders.remove(uri);
+        dillLoadedDataUriToSource.remove(uri);
+        userBuilders?.remove(uri);
       }
     }
     hierarchy?.applyTreeChanges(removedLibraries, const []);
@@ -465,10 +469,10 @@ class IncrementalCompiler implements IncrementalKernelGenerator {
             combinators ??= <Combinator>[];
 
             combinators.add(combinator.isShow
-                ? new Combinator.show(
-                    combinator.names, combinator.fileOffset, library.fileUri)
-                : new Combinator.hide(
-                    combinator.names, combinator.fileOffset, library.fileUri));
+                ? new Combinator.show(null, combinator.names,
+                    combinator.fileOffset, library.fileUri)
+                : new Combinator.hide(null, combinator.names,
+                    combinator.fileOffset, library.fileUri));
           }
 
           debugLibrary.addImport(

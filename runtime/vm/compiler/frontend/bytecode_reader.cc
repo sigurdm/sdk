@@ -271,7 +271,7 @@ intptr_t BytecodeMetadataHelper::ReadPoolEntries(const Function& function,
         // InstanceField constant occupies 2 entries.
         // The first entry is used for field offset.
         obj = Smi::New(field.Offset() / kWordSize);
-        pool.SetTypeAt(i, ObjectPool::kTaggedObject);
+        pool.SetTypeAt(i, ObjectPool::kTaggedObject, ObjectPool::kNotPatchable);
         pool.SetObjectAt(i, obj);
         ++i;
         ASSERT(i < obj_count);
@@ -316,6 +316,7 @@ intptr_t BytecodeMetadataHelper::ReadPoolEntries(const Function& function,
           elem = pool.ObjectAt(elem_index);
           array.SetAt(j, elem);
         }
+        array.MakeImmutable();
         obj = H.Canonicalize(Array::Cast(array));
         ASSERT(!obj.IsNull());
       } break;
@@ -448,7 +449,7 @@ intptr_t BytecodeMetadataHelper::ReadPoolEntries(const Function& function,
                                                        signature_type);
         closure.SetSignatureType(signature_type);
 
-        pool.SetTypeAt(i, ObjectPool::kTaggedObject);
+        pool.SetTypeAt(i, ObjectPool::kTaggedObject, ObjectPool::kNotPatchable);
         pool.SetObjectAt(i, closure);
 
         // Continue reading the constant pool entries inside the opened
@@ -463,7 +464,7 @@ intptr_t BytecodeMetadataHelper::ReadPoolEntries(const Function& function,
       case ConstantPoolTag::kEndClosureFunctionScope: {
         // Entry is not used and set to null.
         obj = Object::null();
-        pool.SetTypeAt(i, ObjectPool::kTaggedObject);
+        pool.SetTypeAt(i, ObjectPool::kTaggedObject, ObjectPool::kNotPatchable);
         pool.SetObjectAt(i, obj);
         return i;  // The caller will close the scope.
       } break;
@@ -499,7 +500,7 @@ intptr_t BytecodeMetadataHelper::ReadPoolEntries(const Function& function,
       default:
         UNREACHABLE();
     }
-    pool.SetTypeAt(i, ObjectPool::kTaggedObject);
+    pool.SetTypeAt(i, ObjectPool::kTaggedObject, ObjectPool::kNotPatchable);
     pool.SetObjectAt(i, obj);
   }
   // Return the index of the last read pool entry.
