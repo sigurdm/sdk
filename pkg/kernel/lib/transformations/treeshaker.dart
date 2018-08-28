@@ -19,6 +19,12 @@ Component transformComponent(
   return component;
 }
 
+class ClassNamePair {
+  final Class receiver;
+  final Name name;
+  ClassNamePair(this.receiver, this.name);
+}
+
 enum ProgramRootKind {
   /// The root is a class which will be instantiated by
   /// external / non-Dart code.
@@ -317,42 +323,12 @@ class TreeShaker {
     _addInstantiatedExternalSubclass(coreTypes.invocationClass);
   }
 
+  List<ClassNamePair> dispatchedNames = new List<ClassNamePair>();
+
   /// Registers the given name as seen in a dynamic dispatch, and discovers used
   /// instance members accordingly.
   void _addDispatchedName(Class receiver, Name name) {
-    int index = numberedClasses[receiver];
-    Set<Name> receiverNames = _dispatchedNames[index] ??= new Set<Name>();
-    // TODO(asgerf): make use of selector arity and getter/setter kind
-    if (receiverNames.add(name)) {
-      List<TreeNode> candidates = _dispatchTargetCandidates[name];
-      if (candidates != null) {
-        for (int i = 0; i < candidates.length; i += 2) {
-          Class host = candidates[i];
-          if (hierarchy.isSubtypeOf(host, receiver)) {
-            // This (host, member) pair is a potential target of the dispatch.
-            Member member = candidates[i + 1];
-
-            // Remove the (host,member) pair from the candidate list.
-            // Move the last pair into the current index and shrink the list.
-            int lastPair = candidates.length - 2;
-            candidates[i] = candidates[lastPair];
-            candidates[i + 1] = candidates[lastPair + 1];
-            candidates.length -= 2;
-            i -= 2; // Revisit the same index now that it has been updated.
-
-            // Mark the pair as used.  This should be done after removing it
-            // from the candidate list, since this call may recursively scan
-            // for more used members.
-            _addUsedMember(host, member);
-          }
-        }
-      }
-      var subtypes = hierarchySubtypes.getSubtypesOf(receiver);
-      var receiverSet = _receiversOfName[name];
-      _receiversOfName[name] = receiverSet == null
-          ? subtypes
-          : _receiversOfName[name].union(subtypes);
-    }
+    dispatchedNames.add(ClassNamePair(receiver, name));
   }
 
   /// Registers the given method as a potential target of dynamic dispatch on
@@ -375,6 +351,7 @@ class TreeShaker {
   void _addInstantiatedClass(Class classNode) {
     int index = numberedClasses[classNode];
     ClassRetention retention = _classRetention[index];
+    print("Instantiating $classNode");
     if (retention.index < ClassRetention.Instance.index) {
       _classRetention[index] = ClassRetention.Instance;
       _propagateClassInstanceLevel(classNode, retention);
@@ -611,36 +588,90 @@ class TreeShaker {
 
   void _iterateWorklist() {
     while (_worklist.isNotEmpty) {
-      // Get the host and member.
-      Member member = _worklist.removeLast();
-      Class host = _worklist.removeLast();
+      while (_worklist.isNotEmpty) {
+        // Get the host and member.
+        Member member = _worklist.removeLast();
+        Class host = _worklist.removeLast();
 
-      // Analyze the method body if we have not done so before.
-      List<Node> summary = _usedMembers[member];
-      if (isIncompleteSummary(summary)) {
-        summary.clear();
-        _visitor.analyzeAndBuildSummary(member, summary);
-      }
+        print("iteration reached $member of $host");
 
-      // Apply the summary in the context of this host.
-      for (int i = 0; i < summary.length; ++i) {
-        Node summaryNode = summary[i];
-        if (summaryNode is Member) {
-          _addUsedMember(host, summaryNode);
-        } else if (summaryNode is Name) {
-          Member target = hierarchy.getDispatchTarget(host, summaryNode);
-          if (target != null) {
-            _addUsedMember(host, target);
-          }
-        } else if (identical(summaryNode, _setterSentinel)) {
-          Name name = summary[++i];
-          Member target = hierarchy.getDispatchTarget(host, name, setter: true);
-          if (target != null) {
-            _addUsedMember(host, target);
-          }
-        } else {
-          throw 'Unexpected summary node: $summaryNode';
+        // Analyze the method body if we have not done so before.
+        List<Node> summary = _usedMembers[member];
+        if (isIncompleteSummary(summary)) {
+          summary.clear();
+          _visitor.analyzeAndBuildSummary(member, summary);
         }
+        if (member.name.name == "\$_setSignedInt32") {
+          print("Summary of $member: $summary");
+        }
+
+        // Apply the summary in the context of this host.
+        for (int i = 0; i < summary.length; ++i) {
+          Node summaryNode = summary[i];
+          if (summaryNode is Member) {
+            _addUsedMember(host, summaryNode);
+          } else if (summaryNode is Name) {
+            Member target = hierarchy.getDispatchTarget(host, summaryNode);
+            if (target != null) {
+              _addUsedMember(host, target);
+            }
+          } else if (identical(summaryNode, _setterSentinel)) {
+            Name name = summary[++i];
+            Member target = hierarchy.getDispatchTarget(
+                host, name, setter: true);
+            if (target != null) {
+              _addUsedMember(host, target);
+            }
+          } else {
+            throw 'Unexpected summary node: $summaryNode';
+          }
+        }
+      }
+      addDynamicallyDispatchedMembers();
+    }
+  }
+
+  void addDynamicallyDispatchedMembers() {
+    while (dispatchedNames.isNotEmpty) {
+      ClassNamePair classNamePair = dispatchedNames.removeLast();
+      Class receiver = classNamePair.receiver;
+      Name name = classNamePair.name;
+      int index = numberedClasses[receiver];
+      Set<Name> receiverNames = _dispatchedNames[index] ??= new Set<Name>();
+
+      // TODO(asgerf): make use of selector arity and getter/setter kind
+      if (receiverNames.add(name)) {
+        List<TreeNode> candidates = _dispatchTargetCandidates[name];
+        if (name.name.endsWith('set')) {
+          print("Dynamic dispatch of $receiver $name $candidates");
+        }
+        if (candidates != null) {
+          for (int i = 0; i < candidates.length; i += 2) {
+            Class host = candidates[i];
+            if (hierarchy.isSubtypeOf(host, receiver)) {
+              // This (host, member) pair is a potential target of the dispatch.
+              Member member = candidates[i + 1];
+
+              // Remove the (host,member) pair from the candidate list.
+              // Move the last pair into the current index and shrink the list.
+              int lastPair = candidates.length - 2;
+              candidates[i] = candidates[lastPair];
+              candidates[i + 1] = candidates[lastPair + 1];
+              candidates.length -= 2;
+              i -= 2; // Revisit the same index now that it has been updated.
+
+              // Mark the pair as used.  This should be done after removing it
+              // from the candidate list, since this call may recursively scan
+              // for more used members.
+              _addUsedMember(host, member);
+            }
+          }
+        }
+        var subtypes = hierarchySubtypes.getSubtypesOf(receiver);
+        var receiverSet = _receiversOfName[name];
+        _receiversOfName[name] = receiverSet == null
+            ? subtypes
+            : _receiversOfName[name].union(subtypes);
       }
     }
   }
@@ -1076,6 +1107,7 @@ class _TreeShakingTransformer extends Transformer {
     final isUsed = target != null &&
         (shaker.isMemberUsed(target) ||
             shaker.isMemberUsedInInterfaceTarget(target));
+    print("$target.isUsed: $isUsed");
     return isUsed ? target : null;
   }
 
@@ -1185,7 +1217,11 @@ class _TreeShakingTransformer extends Transformer {
       }
 
     }
-    if (!shaker.isMemberBodyUsed(node)) {
+
+    if (!(shaker.isMemberBodyUsed(node) || shaker.isMemberUsedInInterfaceTarget(node))) {
+      if (node.name.name.endsWith("isReadOnly")) {
+        print("Node $node is removed ${shaker.isMemberOverridden(node)} ${shaker.isMemberUsedInInterfaceTarget(node)}");
+      }
       if (!shaker.isMemberOverridden(node) &&
           !shaker.isMemberUsedInInterfaceTarget(node)) {
         node.canonicalName?.unbind();

@@ -105,7 +105,7 @@ Future<CompilerOutcome> runTransformation(List<String> arguments) async {
       break;
     case 'treeshake':
       component = treeshaker.transformComponent(coreTypes, hierarchy, component,
-          programRoots: programRoots);
+          programRoots: programRoots, strongMode: true);
       break;
     case 'protoshake':
 //      component = protoshaker.transformComponent(coreTypes, hierarchy, component,
