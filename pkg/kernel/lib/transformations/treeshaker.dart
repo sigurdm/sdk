@@ -100,6 +100,7 @@ class TreeShaker {
   final Component component;
   final bool strongMode;
   final List<ProgramRoot> programRoots;
+  final List<StaticGet> protoCreateCalls = <StaticGet>[];
 
   /// Map from classes to set of names that have been dispatched with that class
   /// as the static receiver type (meaning any subtype of that class can be
@@ -569,6 +570,10 @@ class TreeShaker {
     }
   }
 
+  void _addProtoCreateCall(StaticGet node) {
+    protoCreateCalls.add(node);
+  }
+
   /// Models the impact of a call from user code to an external implementation
   /// of [member] based on its type annotations.
   ///
@@ -752,6 +757,10 @@ class _TreeShakerVisitor extends RecursiveVisitor {
     shaker._addUsedMember(null, target);
   }
 
+  void addProtoCreateCall(StaticGet node) {
+    shaker._addProtoCreateCall(node);
+  }
+
   void addSelfDispatch(Name name, {bool setter: false}) {
     if (setter) {
       summary..add(_setterSentinel)..add(name);
@@ -838,6 +847,8 @@ class _TreeShakerVisitor extends RecursiveVisitor {
     if (!(isA && (node.target.name.name == "create" || node.target.name.name  == "getDefault"))) {
       addStaticUse(node.target);
       node.visitChildren(this);
+    } else {
+      addProtoCreateCall(node);
     }
   }
 
@@ -1189,6 +1200,7 @@ class _TreeShakingTransformer extends Transformer {
           // If the enclosing class is not abstract, the method should still
           // have a body even if it can never be called.
           if (node.function.body != null) {
+            print('Removing ${node.canonicalName}');
             node.function.body = new ExpressionStatement(
                 new Throw(new StringLiteral('Method removed by tree-shaking')))
               ..parent = node.function;
