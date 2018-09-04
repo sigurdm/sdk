@@ -1217,7 +1217,7 @@ class Field extends Member {
   accept(MemberVisitor v) => v.visitField(this);
 
   acceptReference(MemberReferenceVisitor v) => v.visitFieldReference(this);
-
+// let final dynamic #t2 = new protobuf::BuilderInfo::•("AppInfo") in let final dynamic #t1380 = #t2.aOS(1, "buildVersion") in let
   visitChildren(Visitor v) {
     visitList(annotations, v);
     type?.accept(v);
@@ -2509,6 +2509,33 @@ class SuperPropertyGet extends Expression {
 }
 
 /// Expression of form `super.field = value`.
+
+/// Read a static field, call a static getter, or tear off a static method.
+class StaticGet extends Expression {
+  /// A static field, getter, or method (for tear-off).
+  Reference targetReference;
+
+  StaticGet(Member target) : this.byReference(getMemberReference(target));
+
+  StaticGet.byReference(this.targetReference);
+
+  Member get target => targetReference?.asMember;
+
+  void set target(Member target) {
+    targetReference = getMemberReference(target);
+  }
+
+  DartType getStaticType(TypeEnvironment types) => target.getterType;
+
+  accept(ExpressionVisitor v) => v.visitStaticGet(this);
+  accept1(ExpressionVisitor1 v, arg) => v.visitStaticGet(this, arg);
+
+  visitChildren(Visitor v) {
+    target?.acceptReference(v);
+  }
+
+  transformChildren(Transformer v) {}
+}
 ///
 /// This may invoke a setter or assign a field.
 ///
@@ -2549,33 +2576,6 @@ class SuperPropertySet extends Expression {
       value?.parent = this;
     }
   }
-}
-
-/// Read a static field, call a static getter, or tear off a static method.
-class StaticGet extends Expression {
-  /// A static field, getter, or method (for tear-off).
-  Reference targetReference;
-
-  StaticGet(Member target) : this.byReference(getMemberReference(target));
-
-  StaticGet.byReference(this.targetReference);
-
-  Member get target => targetReference?.asMember;
-
-  void set target(Member target) {
-    targetReference = getMemberReference(target);
-  }
-
-  DartType getStaticType(TypeEnvironment types) => target.getterType;
-
-  accept(ExpressionVisitor v) => v.visitStaticGet(this);
-  accept1(ExpressionVisitor1 v, arg) => v.visitStaticGet(this, arg);
-
-  visitChildren(Visitor v) {
-    target?.acceptReference(v);
-  }
-
-  transformChildren(Transformer v) {}
 }
 
 /// Assign a static field or call a static setter.

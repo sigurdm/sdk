@@ -306,10 +306,13 @@ class TreeShaker {
           });
         }
       }
+
+
       // Marking members as overridden should not cause new code to become
       // reachable.
       assert(_worklist.isEmpty);
     }
+
   }
 
   /// Registers some extremely commonly used core classes as instantiated, so
@@ -592,7 +595,6 @@ class TreeShaker {
         Member member = _worklist.removeLast();
         Class host = _worklist.removeLast();
 
-
         // Analyze the method body if we have not done so before.
         List<Node> summary = _usedMembers[member];
         if (isIncompleteSummary(summary)) {
@@ -612,8 +614,8 @@ class TreeShaker {
             }
           } else if (identical(summaryNode, _setterSentinel)) {
             Name name = summary[++i];
-            Member target = hierarchy.getDispatchTarget(
-                host, name, setter: true);
+            Member target =
+                hierarchy.getDispatchTarget(host, name, setter: true);
             if (target != null) {
               _addUsedMember(host, target);
             }
@@ -623,6 +625,16 @@ class TreeShaker {
         }
       }
       addDynamicallyDispatchedMembers();
+      while (!protoCreateCalls.isEmpty) {
+        StaticGet get = protoCreateCalls.removeLast();
+        Member member = get.target;
+        _addUsedMember(null, member);
+        if (isInstantiated(member.enclosingClass)) {
+          _worklist.add(member.enclosingClass);
+          _worklist.add(member);
+        }
+
+      }
     }
   }
 
@@ -815,7 +827,6 @@ class _TreeShakerVisitor extends RecursiveVisitor {
 
   @override
   visitStaticInvocation(StaticInvocation node) {
-
     addStaticUse(node.target);
     node.visitChildren(this);
   }
@@ -865,9 +876,13 @@ class _TreeShakerVisitor extends RecursiveVisitor {
     isA = false;
   }
 
+  List<StaticGet> caught = <StaticGet>[];
+
   @override
   visitStaticGet(StaticGet node) {
-    if (!(isA && (node.target.name.name == "create" || node.target.name.name  == "getDefault"))) {
+    if (!(isA &&
+        (node.target.name.name == "create" ||
+            node.target.name.name == "getDefault"))) {
       addStaticUse(node.target);
       node.visitChildren(this);
     } else {
@@ -1147,7 +1162,11 @@ class _TreeShakingTransformer extends Transformer {
   }
 
   Class visitClass(Class node) {
+    if (node.name == 'CustomerUserAppData') {
+      print(shaker.getClassRetention(node));
+    }
     switch (shaker.getClassRetention(node)) {
+
       case ClassRetention.None:
         node.canonicalName?.unbind();
         return null; // Remove the class.
@@ -1185,37 +1204,41 @@ class _TreeShakingTransformer extends Transformer {
     let final dynamic #t4 = #t1.{pro::BuilderInfo::a}<pb::Counts>(3, "counts", pro::PbFieldType::OM, pb::Counts::getDefault, pb::Counts::create) in
      let final dynamic #t5 = #t1.{pro::BuilderInfo::hasRequiredFields} = false in #t1;
 ''';
-    if (node is Field && node.name.name == '_i') {
+    if (node is Field &&
+        node.name.name == '_i' &&
+        node.enclosingClass?.superclass?.name == "GeneratedMessage") {
+      if (node.enclosingClass.name == "AppInfo") {
+        print("Found appinfo ***** $node");
+      }
       Let l1 = node.initializer;
+
       if (l1 == null) {
-        print("$node has no initializer body ");
+        throw ("$node has no initializer body ");
       } else {
-      Expression l2 = l1.body;
-      while (l2 is Let) {
-        Let ll2 = l2;
-        if (l2 is Let) {
+        Expression l2 = l1.body;
+        while (l2 is Let) {
+          Let ll2 = l2;
           VariableDeclaration v = ll2.variable;
-         
+
           if (v.initializer is MethodInvocation) {
             MethodInvocation p = v.initializer;
             if (!(p.name.name == "a" || p.name.name == "pp")) {
               print("Primitive field init: $p '${p.name.name}'");
-     
             } else {
-            DartType arg = p.arguments.types.first;
-            if (!shaker.isInstantiated((arg as InterfaceType).classNode)) {
-              print("I removed $arg, will zero initializer $v");
-              v.initializer = new NullLiteral();
-            }
+              DartType arg = p.arguments.types.first;
+              if (!shaker.isInstantiated((arg as InterfaceType).classNode)) {
+                print("in ${node.enclosingClass}I removed $arg, will zero initializer ${v.initializer}");
+                v.initializer = new NullLiteral()..parent = v;
+              }
             }
           }
           l2 = ll2.body;
         }
       }
-      }
     }
 
-    if (!(shaker.isMemberBodyUsed(node) || shaker.isMemberUsedInInterfaceTarget(node))) {
+    if (!(shaker.isMemberBodyUsed(node) ||
+        shaker.isMemberUsedInInterfaceTarget(node))) {
       if (!shaker.isMemberOverridden(node) &&
           !shaker.isMemberUsedInInterfaceTarget(node)) {
         node.canonicalName?.unbind();
