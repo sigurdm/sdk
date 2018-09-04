@@ -351,7 +351,6 @@ class TreeShaker {
   void _addInstantiatedClass(Class classNode) {
     int index = numberedClasses[classNode];
     ClassRetention retention = _classRetention[index];
-    print("Instantiating $classNode");
     if (retention.index < ClassRetention.Instance.index) {
       _classRetention[index] = ClassRetention.Instance;
       _propagateClassInstanceLevel(classNode, retention);
@@ -593,16 +592,12 @@ class TreeShaker {
         Member member = _worklist.removeLast();
         Class host = _worklist.removeLast();
 
-        print("iteration reached $member of $host");
 
         // Analyze the method body if we have not done so before.
         List<Node> summary = _usedMembers[member];
         if (isIncompleteSummary(summary)) {
           summary.clear();
           _visitor.analyzeAndBuildSummary(member, summary);
-        }
-        if (member.name.name == "\$_setSignedInt32") {
-          print("Summary of $member: $summary");
         }
 
         // Apply the summary in the context of this host.
@@ -642,9 +637,6 @@ class TreeShaker {
       // TODO(asgerf): make use of selector arity and getter/setter kind
       if (receiverNames.add(name)) {
         List<TreeNode> candidates = _dispatchTargetCandidates[name];
-        if (name.name.endsWith('set')) {
-          print("Dynamic dispatch of $receiver $name $candidates");
-        }
         if (candidates != null) {
           for (int i = 0; i < candidates.length; i += 2) {
             Class host = candidates[i];
@@ -1107,7 +1099,6 @@ class _TreeShakingTransformer extends Transformer {
     final isUsed = target != null &&
         (shaker.isMemberUsed(target) ||
             shaker.isMemberUsedInInterfaceTarget(target));
-    print("$target.isUsed: $isUsed");
     return isUsed ? target : null;
   }
 
@@ -1196,32 +1187,35 @@ class _TreeShakingTransformer extends Transformer {
 ''';
     if (node is Field && node.name.name == '_i') {
       Let l1 = node.initializer;
+      if (l1 == null) {
+        print("$node has no initializer body ");
+      } else {
       Expression l2 = l1.body;
       while (l2 is Let) {
         Let ll2 = l2;
         if (l2 is Let) {
           VariableDeclaration v = ll2.variable;
-          print(v);
+         
           if (v.initializer is MethodInvocation) {
             MethodInvocation p = v.initializer;
+            if (!(p.name.name == "a" || p.name.name == "pp")) {
+              print("Primitive field init: $p '${p.name.name}'");
+     
+            } else {
             DartType arg = p.arguments.types.first;
-            print((arg as InterfaceType).classNode);
-            print(shaker.getClassRetention((arg as InterfaceType).classNode));
             if (!shaker.isInstantiated((arg as InterfaceType).classNode)) {
-              print("BLAH!! $arg");
+              print("I removed $arg, will zero initializer $v");
               v.initializer = new NullLiteral();
+            }
             }
           }
           l2 = ll2.body;
         }
       }
-
+      }
     }
 
     if (!(shaker.isMemberBodyUsed(node) || shaker.isMemberUsedInInterfaceTarget(node))) {
-      if (node.name.name.endsWith("isReadOnly")) {
-        print("Node $node is removed ${shaker.isMemberOverridden(node)} ${shaker.isMemberUsedInInterfaceTarget(node)}");
-      }
       if (!shaker.isMemberOverridden(node) &&
           !shaker.isMemberUsedInInterfaceTarget(node)) {
         node.canonicalName?.unbind();
@@ -1236,7 +1230,6 @@ class _TreeShakingTransformer extends Transformer {
           // If the enclosing class is not abstract, the method should still
           // have a body even if it can never be called.
           if (node.function.body != null) {
-            print('Removing ${node.canonicalName}');
             node.function.body = new ExpressionStatement(
                 new Throw(new StringLiteral('Method removed by tree-shaking')))
               ..parent = node.function;
