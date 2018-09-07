@@ -22,7 +22,7 @@ import 'util/command_line.dart';
 import 'util/uri_extras.dart';
 import 'util/util.dart' show stackTraceFilePrefix;
 
-const String LIBRARY_ROOT = '../../../../../sdk';
+const String LIBRARY_ROOT = '../../../../../sdk/sdk';
 const String OUTPUT_LANGUAGE_DART = 'Dart';
 
 /**

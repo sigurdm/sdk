@@ -676,6 +676,7 @@ class Constantifier extends ir.ExpressionVisitor<ConstantExpression> {
       name = '?';
     } else if (node.type is ir.FunctionType) {
       ir.FunctionType functionType = node.type;
+      print("******* ${node.parent.parent}");
       assert(functionType.typedef != null);
       type = elementMap.getTypedefType(functionType.typedef);
       name = functionType.typedef.name;

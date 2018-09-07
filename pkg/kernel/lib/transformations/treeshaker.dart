@@ -203,7 +203,7 @@ class TreeShaker {
   }
 
   bool isTypedefUsed(Typedef node) {
-    return _usedTypedefs.contains(node);
+    return true; //_usedTypedefs.contains(node);
   }
 
   bool isMemberUsed(Member member) {
@@ -1207,9 +1207,6 @@ class _TreeShakingTransformer extends Transformer {
     if (node is Field &&
         node.name.name == '_i' &&
         node.enclosingClass?.superclass?.name == "GeneratedMessage") {
-      if (node.enclosingClass.name == "AppInfo") {
-        print("Found appinfo ***** $node");
-      }
       Let l1 = node.initializer;
 
       if (l1 == null) {
@@ -1222,12 +1219,9 @@ class _TreeShakingTransformer extends Transformer {
 
           if (v.initializer is MethodInvocation) {
             MethodInvocation p = v.initializer;
-            if (!(p.name.name == "a" || p.name.name == "pp")) {
-              print("Primitive field init: $p '${p.name.name}'");
-            } else {
+            if (p.name.name == "a" || p.name.name == "pp") {
               DartType arg = p.arguments.types.first;
               if (!shaker.isInstantiated((arg as InterfaceType).classNode)) {
-                print("in ${node.enclosingClass}I removed $arg, will zero initializer ${v.initializer}");
                 v.initializer = new NullLiteral()..parent = v;
               }
             }
