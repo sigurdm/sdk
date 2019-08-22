@@ -104,14 +104,16 @@ abstract class SecureSocket implements Socket {
   static Future<SecureSocket> secure(Socket socket,
       {host,
       SecurityContext context,
-      bool onBadCertificate(X509Certificate certificate)}) {
+      bool onBadCertificate(X509Certificate certificate,
+      List<String> supportedProtocols)}) {
     return ((socket as dynamic /*_Socket*/)._detachRaw() as Future)
         .then<RawSecureSocket>((detachedRaw) {
       return RawSecureSocket.secure(detachedRaw[0] as RawSocket,
           subscription: detachedRaw[1] as StreamSubscription<RawSocketEvent>,
           host: host,
           context: context,
-          onBadCertificate: onBadCertificate);
+          onBadCertificate: onBadCertificate,
+          supportedProtocols: supportedProtocols);
     }).then<SecureSocket>((raw) => new SecureSocket._(raw));
   }
 
