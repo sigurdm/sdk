@@ -123,6 +123,13 @@ executables. See https://dart.dev/tools/dart2native for additional details.
 
 #### Pub
 
+* `pub publish` now warns about the old flutter plugin registration format.
+
+* `pub publish` now warns about the `author` field in pubspec.yaml being.
+  obsolete.
+
+* Show a proper error message when `git` is not installed.
+
 #### Linter
 
 The Linter was updated to `0.1.101`, which includes:
