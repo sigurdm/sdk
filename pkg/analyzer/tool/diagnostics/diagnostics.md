@@ -8809,6 +8809,9 @@ class C {
 
 ### return_of_invalid_type
 
+_A value of type '{0}' can't be returned by the 'onError' handler because it
+must be assignable to '{1}'._
+
 _A value of type '{0}' can't be returned from the constructor '{2}' because it
 has a return type of '{1}'._
 
@@ -8878,7 +8881,7 @@ String Function(String) f = (s) => 3.toString();
 
 ### return_without_value
 
-_The  return value is missing after 'return'._
+_The return value is missing after 'return'._
 
 #### Description
 
